@@ -114,6 +114,7 @@ CMD="python ./adv_otpt_classification.py ${data_root} \
   --clip_impl ${clip_impl} \
   --download_root ${download_root} \
   --seed ${seed} \
+  --ctx_init a_photo_of_a \
   --dataset_mode ${dataset_mode}"
 
 # =========================
