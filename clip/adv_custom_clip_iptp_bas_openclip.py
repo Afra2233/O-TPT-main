@@ -1,4 +1,5 @@
 import math
+import os
 from typing import Tuple
 
 import torch
@@ -10,9 +11,7 @@ try:
 except ImportError:
     open_clip = None
 
-from clip import load as openai_clip_load
-from clip import tokenize as openai_clip_tokenize
-from .simple_tokenizer import SimpleTokenizer as _Tokenizer
+from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 from data.imagnet_prompts import imagenet_classes
 from data.covid_prompts import covid_classes
 from data.fewshot_datasets import fewshot_datasets
@@ -24,20 +23,13 @@ _tokenizer = _Tokenizer()
 DOWNLOAD_ROOT = '~/.cache/clip'
 
 
-# def _build_backbone_and_tokenizer(
-#     clip_impl='openai',
-#     arch='ViT-B/16',
-#     pretrained=None,
-#     device='cuda',
-#     download_root=DOWNLOAD_ROOT
-# ):
 def _build_backbone_and_tokenizer(
     clip_impl='openai',
     arch='ViT-B/16',
     pretrained=None,
     checkpoint_path=None,
     device='cuda',
-    download_root='~/.cache/clip'
+    download_root=DOWNLOAD_ROOT
 ):
     """
     Returns:
@@ -45,40 +37,21 @@ def _build_backbone_and_tokenizer(
         tokenizer_fn: callable that takes str or list[str] and returns token ids
     """
     if clip_impl == 'openai':
+        # lazy import
+        from clip.clip import load as openai_clip_load
+        from clip.clip import tokenize as openai_clip_tokenize
+
         clip_model, _, _ = openai_clip_load(
             arch, device=device, download_root=download_root
         )
         tokenizer_fn = openai_clip_tokenize
         return clip_model, tokenizer_fn
 
-    # elif clip_impl == 'open_clip':
-    #     if open_clip is None:
-    #         raise ImportError("open_clip is not installed, but clip_impl='open_clip' was requested.")
-
-    #     if pretrained is None:
-    #         raise ValueError("For clip_impl='open_clip', please provide pretrained model name or hf-hub path.")
-
-    #     # HF hub path
-    #     if pretrained.startswith('hf-hub:'):
-    #         clip_model, _, _ = open_clip.create_model_and_transforms(
-    #             pretrained,
-    #             device=device
-    #         )
-    #         tokenizer_fn = open_clip.get_tokenizer(pretrained)
-    #     else:
-    #         clip_model, _, _ = open_clip.create_model_and_transforms(
-    #             arch,
-    #             pretrained=pretrained,
-    #             device=device
-    #         )
-    #         tokenizer_fn = open_clip.get_tokenizer(arch)
-
-    #     return clip_model, tokenizer_fn
     elif clip_impl == 'open_clip':
         if open_clip is None:
             raise ImportError("open_clip is not installed, but clip_impl='open_clip' was requested.")
 
-        # local checkpoint path has highest priority
+        # highest priority: local checkpoint
         if checkpoint_path is not None:
             clip_model = open_clip.create_model(
                 arch,
@@ -89,7 +62,6 @@ def _build_backbone_and_tokenizer(
 
             ckpt = torch.load(checkpoint_path, map_location='cpu')
 
-            # common checkpoint layouts
             if isinstance(ckpt, dict):
                 if 'state_dict' in ckpt:
                     state_dict = ckpt['state_dict']
@@ -100,7 +72,6 @@ def _build_backbone_and_tokenizer(
             else:
                 state_dict = ckpt
 
-            # strip common prefixes
             new_state_dict = {}
             for k, v in state_dict.items():
                 nk = k
@@ -110,10 +81,10 @@ def _build_backbone_and_tokenizer(
                     nk = nk[len('model.'):]
                 new_state_dict[nk] = v
 
-            missing, unexpected = clip_model.load_state_dict(new_state_dict, strict=False)
+            incompatible = clip_model.load_state_dict(new_state_dict, strict=False)
             print("Loaded open_clip checkpoint from:", checkpoint_path)
-            print("Missing keys:", len(missing))
-            print("Unexpected keys:", len(unexpected))
+            print("Missing keys:", len(incompatible.missing_keys))
+            print("Unexpected keys:", len(incompatible.unexpected_keys))
 
             clip_model = clip_model.to(device)
             return clip_model, tokenizer_fn
@@ -137,8 +108,8 @@ def _build_backbone_and_tokenizer(
 
         return clip_model, tokenizer_fn
 
-    # else:
-    #     raise ValueError(f"Unknown clip_impl: {clip_impl}")
+    else:
+        raise ValueError(f"Unknown clip_impl: {clip_impl}")
 
 
 def _get_visual_module(clip_model):
@@ -170,6 +141,7 @@ class ClipImageEncoder(nn.Module):
         n_class=1000,
         clip_impl='openai',
         pretrained=None,
+        checkpoint_path=None,
         download_root=DOWNLOAD_ROOT
     ):
         super(ClipImageEncoder, self).__init__()
@@ -177,6 +149,7 @@ class ClipImageEncoder(nn.Module):
             clip_impl=clip_impl,
             arch=arch,
             pretrained=pretrained,
+            checkpoint_path=checkpoint_path,
             device=device,
             download_root=download_root
         )
@@ -209,15 +182,7 @@ class TextEncoder(nn.Module):
     def __init__(self, clip_model):
         super().__init__()
 
-        # OpenAI CLIP style
-        # if hasattr(clip_model, 'transformer'):
-        #     self.transformer = clip_model.transformer
-        #     self.positional_embedding = clip_model.positional_embedding
-        #     self.ln_final = clip_model.ln_final
-        #     self.text_projection = clip_model.text_projection
-        #     self.dtype = clip_model.dtype
-        #     self.mode = 'openai'
-        #     return
+        # OpenAI CLIP style or some OpenCLIP variants
         if hasattr(clip_model, 'transformer'):
             self.transformer = clip_model.transformer
             self.positional_embedding = clip_model.positional_embedding
@@ -233,17 +198,10 @@ class TextEncoder(nn.Module):
             else:
                 self.dtype = torch.float32
 
-            self.mode = 'openai'
+            self.mode = 'openai_like'
             return
-        # OpenCLIP common style: text transformer stored under clip_model.transformer as well
-        # if hasattr(clip_model, 'text') and hasattr(clip_model.text, 'transformer'):
-        #     self.transformer = clip_model.text.transformer
-        #     self.positional_embedding = clip_model.text.positional_embedding
-        #     self.ln_final = clip_model.text.ln_final
-        #     self.text_projection = clip_model.text.text_projection
-        #     self.dtype = clip_model.visual.conv1.weight.dtype
-        #     self.mode = 'openclip_text_submodule'
-        #     return
+
+        # OpenCLIP variants with text tower under clip_model.text
         if hasattr(clip_model, 'text') and hasattr(clip_model.text, 'transformer'):
             self.transformer = clip_model.text.transformer
             self.positional_embedding = clip_model.text.positional_embedding
@@ -266,9 +224,9 @@ class TextEncoder(nn.Module):
 
     def forward(self, prompts, tokenized_prompts):
         x = prompts + self.positional_embedding.type(self.dtype)
-        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = x.permute(1, 0, 2)
         x = self.transformer(x)
-        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = x.permute(1, 0, 2)
         x = self.ln_final(x).type(self.dtype)
 
         x = x[torch.arange(x.shape[0], device=x.device), tokenized_prompts.argmax(dim=-1)] @ self.text_projection
@@ -294,8 +252,12 @@ class PromptLearner(nn.Module):
 
         if hasattr(clip_model, 'dtype'):
             dtype = clip_model.dtype
-        else:
+        elif hasattr(clip_model, 'token_embedding'):
+            dtype = clip_model.token_embedding.weight.dtype
+        elif hasattr(clip_model, 'visual') and hasattr(clip_model.visual, 'conv1'):
             dtype = clip_model.visual.conv1.weight.dtype
+        else:
+            dtype = torch.float32
 
         self.dtype = dtype
         self.device = clip_model.visual.conv1.weight.device
@@ -383,9 +345,6 @@ class PromptLearner(nn.Module):
         self.n_cls = n_cls
         self.n_ctx = n_ctx
         self.classnames = classnames
-        self.clip_impl = None
-        self.pretrained = None
-        self.arch = None
 
     def reset(self):
         ctx_vectors = self.ctx_init_state
@@ -394,7 +353,7 @@ class PromptLearner(nn.Module):
             cls_vectors = self.cls_init_state
             self.cls.data.copy_(cls_vectors)
 
-    def reset_classnames(self, classnames, arch, clip_impl='openai', pretrained=None, download_root=DOWNLOAD_ROOT):
+    def reset_classnames(self, classnames, arch, clip_impl='openai', pretrained=None, checkpoint_path=None, download_root=DOWNLOAD_ROOT):
         self.n_cls = len(classnames)
 
         if not self.learned_cls:
@@ -415,6 +374,7 @@ class PromptLearner(nn.Module):
             clip_impl=clip_impl,
             arch=arch,
             pretrained=pretrained,
+            checkpoint_path=checkpoint_path,
             device=self.device,
             download_root=download_root
         )
@@ -458,7 +418,7 @@ class PromptLearner(nn.Module):
                 prompts = torch.cat([prefix, ctx, suffix], dim=-2)
 
         elif self.class_token_position == "middle":
-            if self.split_idx is not None:
+            if hasattr(self, 'split_idx') and self.split_idx is not None:
                 half_n_ctx = self.split_idx
             else:
                 half_n_ctx = self.n_ctx // 2
@@ -510,29 +470,23 @@ class ClipTestTimeTuning(nn.Module):
         learned_cls=False,
         clip_impl='openai',
         pretrained=None,
-        download_root=DOWNLOAD_ROOT,
-        checkpoint_path=None
+        checkpoint_path=None,
+        download_root=DOWNLOAD_ROOT
     ):
         super(ClipTestTimeTuning, self).__init__()
 
-        # clip_model, tokenizer_fn = _build_backbone_and_tokenizer(
-        #     clip_impl=clip_impl,
-        #     arch=arch,
-        #     pretrained=pretrained,
-        #     device=device,
-        #     download_root=download_root
-        # )
         clip_model, tokenizer_fn = _build_backbone_and_tokenizer(
-        clip_impl=clip_impl,
-        arch=arch,
-        pretrained=pretrained,
-        checkpoint_path=checkpoint_path,
-        device=device,
-        download_root=download_root
-)
+            clip_impl=clip_impl,
+            arch=arch,
+            pretrained=pretrained,
+            checkpoint_path=checkpoint_path,
+            device=device,
+            download_root=download_root
+        )
 
         self.clip_impl = clip_impl
         self.pretrained = pretrained
+        self.checkpoint_path = checkpoint_path
         self.arch = arch
         self.download_root = download_root
 
@@ -568,6 +522,7 @@ class ClipTestTimeTuning(nn.Module):
             arch,
             clip_impl=self.clip_impl,
             pretrained=self.pretrained,
+            checkpoint_path=self.checkpoint_path,
             download_root=self.download_root
         )
 
@@ -617,8 +572,8 @@ def get_coop(
     learned_cls=False,
     clip_impl='openai',
     pretrained=None,
-    download_root=DOWNLOAD_ROOT,
-    checkpoint_path=None
+    checkpoint_path=None,
+    download_root=DOWNLOAD_ROOT
 ):
     if test_set in fewshot_datasets:
         classnames = eval("{}_classes".format(test_set.lower()))
@@ -631,31 +586,19 @@ def get_coop(
         classnames = covid_classes
     else:
         classnames = imagenet_classes
-        model = ClipTestTimeTuning(
-            device,
-            classnames,
-            None,
-            arch=clip_arch,
-            n_ctx=n_ctx,
-            ctx_init=ctx_init,
-            learned_cls=learned_cls,
-            clip_impl=clip_impl,
-            pretrained=pretrained,
-            checkpoint_path=checkpoint_path,
-            download_root=download_root
-        )
 
-    # model = ClipTestTimeTuning(
-    #     device,
-    #     classnames,
-    #     None,
-    #     arch=clip_arch,
-    #     n_ctx=n_ctx,
-    #     ctx_init=ctx_init,
-    #     learned_cls=learned_cls,
-    #     clip_impl=clip_impl,
-    #     pretrained=pretrained,
-    #     download_root=download_root
-    # )
+    model = ClipTestTimeTuning(
+        device=device,
+        classnames=classnames,
+        batch_size=None,
+        arch=clip_arch,
+        n_ctx=n_ctx,
+        ctx_init=ctx_init,
+        learned_cls=learned_cls,
+        clip_impl=clip_impl,
+        pretrained=pretrained,
+        checkpoint_path=checkpoint_path,
+        download_root=download_root
+    )
 
     return model
