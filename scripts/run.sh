@@ -10,7 +10,7 @@
 #SBATCH -e /scratch/hpc/07/zhang303/O-TPT-main/%x-%j.err
 
 module add anaconda3/2022.05
-source activate ctpt
+source activate otpt
 
 # =========================
 # Basic paths
@@ -26,7 +26,7 @@ csv_log='/scratch/hpc/07/zhang303/O-TPT-main/log/adv_otpt_results.csv'
 method='baseline'
 
 # backbone: openai / fare2 / openclip
-backbone='fare2'
+backbone='openai'
 
 # attack: true / false
 use_attack='true'
