@@ -666,11 +666,16 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
             else:
                 ipdb.set_trace()
 
+        # clean_confidence, clean_index = torch.max(clean_softmax_output, 1)
+
+        # clean_result_dict['max_confidence'].append(clean_confidence.item())
+        # clean_result_dict['prediction'].append(clean_index.item())
+        # clean_result_dict['label'].append(target.item())
         clean_confidence, clean_index = torch.max(clean_softmax_output, 1)
 
-        clean_result_dict['max_confidence'].append(clean_confidence.item())
-        clean_result_dict['prediction'].append(clean_index.item())
-        clean_result_dict['label'].append(target.item())
+        clean_result_dict['max_confidence'].extend(clean_confidence.detach().cpu().tolist())
+        clean_result_dict['prediction'].extend(clean_index.detach().cpu().tolist())
+        clean_result_dict['label'].extend(target.detach().cpu().tolist())
 
         acc1, acc5 = accuracy(clean_output, target, topk=(1, 5))
         clean_top1.update(acc1[0], image.size(0))
@@ -693,12 +698,16 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
                 else:
                     ipdb.set_trace()
 
+            # robust_confidence, robust_index = torch.max(robust_softmax_output, 1)
+
+            # robust_result_dict['max_confidence'].append(robust_confidence.item())
+            # robust_result_dict['prediction'].append(robust_index.item())
+            # robust_result_dict['label'].append(target.item())
             robust_confidence, robust_index = torch.max(robust_softmax_output, 1)
 
-            robust_result_dict['max_confidence'].append(robust_confidence.item())
-            robust_result_dict['prediction'].append(robust_index.item())
-            robust_result_dict['label'].append(target.item())
-
+            robust_result_dict['max_confidence'].extend(robust_confidence.detach().cpu().tolist())
+            robust_result_dict['prediction'].extend(robust_index.detach().cpu().tolist())
+            robust_result_dict['label'].extend(target.detach().cpu().tolist())
             r_acc1, r_acc5 = accuracy(robust_output, target, topk=(1, 5))
             robust_top1.update(r_acc1[0], image.size(0))
             robust_top5.update(r_acc5[0], image.size(0))
