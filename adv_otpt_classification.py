@@ -38,7 +38,7 @@ except ImportError:
     BICUBIC = Image.BICUBIC
 
 # from clip.adv_custom_clip_iptp_bas import get_coop
-from adv_custom_clip_iptp_bas_openclip import get_coop
+from clip.adv_custom_clip_iptp_bas_openclip import get_coop
 from clip.cocoop import get_cocoop
 from data.imagnet_prompts import imagenet_classes
 from data.datautils import AugMixAugmenter, build_dataset
