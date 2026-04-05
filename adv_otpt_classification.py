@@ -313,17 +313,13 @@ def main_worker(gpu, args):
         classnames = eval("{}_classes".format(args.test_sets.lower()))
     else:
         classnames = imagenet_classes
-
     if args.cocoop:
         model = get_cocoop(args.arch, args.test_sets, 'cpu', args.n_ctx, args.disp_cons)
         assert args.load is not None
         load_model_weight(args.load, model, "cuda:{}".format(args.gpu), args)
         model_state = deepcopy(model.state_dict())
     else:
-       
-        # model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init, args.disp_cons)
-        # model = get_coop(args.arch, args.test_sets, args.gpu,args.n_ctx, args.ctx_init, args.disp_cons,clip_impl=args.clip_impl, pretrained=args.openclip_pretrained, download_root=args.download_root)
-       model = get_coop(
+        model = get_coop(
             args.arch,
             args.test_sets,
             args.gpu,
@@ -335,8 +331,7 @@ def main_worker(gpu, args):
             checkpoint_path=args.openclip_ckpt,
             download_root=args.download_root
         )
-       
-       if args.load is not None:
+        if args.load is not None:
             print("Use pre-trained soft prompt (CoOp) as initialization")
             pretrained_ctx = torch.load(args.load)['state_dict']['ctx']
             assert pretrained_ctx.size()[0] == args.n_ctx
@@ -345,6 +340,38 @@ def main_worker(gpu, args):
                 model.prompt_learner.ctx_init_state = pretrained_ctx
 
         model_state = None
+
+    # if args.cocoop:
+    #     model = get_cocoop(args.arch, args.test_sets, 'cpu', args.n_ctx, args.disp_cons)
+    #     assert args.load is not None
+    #     load_model_weight(args.load, model, "cuda:{}".format(args.gpu), args)
+    #     model_state = deepcopy(model.state_dict())
+    # else:
+       
+    #     # model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init, args.disp_cons)
+    #     # model = get_coop(args.arch, args.test_sets, args.gpu,args.n_ctx, args.ctx_init, args.disp_cons,clip_impl=args.clip_impl, pretrained=args.openclip_pretrained, download_root=args.download_root)
+    #    model = get_coop(
+    #         args.arch,
+    #         args.test_sets,
+    #         args.gpu,
+    #         args.n_ctx,
+    #         args.ctx_init,
+    #         args.disp_cons,
+    #         clip_impl=args.clip_impl,
+    #         pretrained=args.openclip_pretrained,
+    #         checkpoint_path=args.openclip_ckpt,
+    #         download_root=args.download_root
+    #     )
+       
+    #     if args.load is not None:
+    #         print("Use pre-trained soft prompt (CoOp) as initialization")
+    #         pretrained_ctx = torch.load(args.load)['state_dict']['ctx']
+    #         assert pretrained_ctx.size()[0] == args.n_ctx
+    #         with torch.no_grad():
+    #             model.prompt_learner.ctx.copy_(pretrained_ctx)
+    #             model.prompt_learner.ctx_init_state = pretrained_ctx
+
+    #     model_state = None
 
     for name, param in model.named_parameters():
         if not args.cocoop:
