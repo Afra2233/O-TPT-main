@@ -140,22 +140,55 @@ class TextEncoder(nn.Module):
         super().__init__()
 
         # OpenAI CLIP style
+        # if hasattr(clip_model, 'transformer'):
+        #     self.transformer = clip_model.transformer
+        #     self.positional_embedding = clip_model.positional_embedding
+        #     self.ln_final = clip_model.ln_final
+        #     self.text_projection = clip_model.text_projection
+        #     self.dtype = clip_model.dtype
+        #     self.mode = 'openai'
+        #     return
         if hasattr(clip_model, 'transformer'):
             self.transformer = clip_model.transformer
             self.positional_embedding = clip_model.positional_embedding
             self.ln_final = clip_model.ln_final
             self.text_projection = clip_model.text_projection
-            self.dtype = clip_model.dtype
+
+            if hasattr(clip_model, 'dtype'):
+                self.dtype = clip_model.dtype
+            elif hasattr(clip_model, 'token_embedding'):
+                self.dtype = clip_model.token_embedding.weight.dtype
+            elif hasattr(clip_model, 'visual') and hasattr(clip_model.visual, 'conv1'):
+                self.dtype = clip_model.visual.conv1.weight.dtype
+            else:
+                self.dtype = torch.float32
+
             self.mode = 'openai'
             return
-
         # OpenCLIP common style: text transformer stored under clip_model.transformer as well
+        # if hasattr(clip_model, 'text') and hasattr(clip_model.text, 'transformer'):
+        #     self.transformer = clip_model.text.transformer
+        #     self.positional_embedding = clip_model.text.positional_embedding
+        #     self.ln_final = clip_model.text.ln_final
+        #     self.text_projection = clip_model.text.text_projection
+        #     self.dtype = clip_model.visual.conv1.weight.dtype
+        #     self.mode = 'openclip_text_submodule'
+        #     return
         if hasattr(clip_model, 'text') and hasattr(clip_model.text, 'transformer'):
             self.transformer = clip_model.text.transformer
             self.positional_embedding = clip_model.text.positional_embedding
             self.ln_final = clip_model.text.ln_final
             self.text_projection = clip_model.text.text_projection
-            self.dtype = clip_model.visual.conv1.weight.dtype
+
+            if hasattr(clip_model.text, 'token_embedding'):
+                self.dtype = clip_model.text.token_embedding.weight.dtype
+            elif hasattr(clip_model, 'token_embedding'):
+                self.dtype = clip_model.token_embedding.weight.dtype
+            elif hasattr(clip_model, 'visual') and hasattr(clip_model.visual, 'conv1'):
+                self.dtype = clip_model.visual.conv1.weight.dtype
+            else:
+                self.dtype = torch.float32
+
             self.mode = 'openclip_text_submodule'
             return
 
