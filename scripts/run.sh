@@ -26,7 +26,7 @@ csv_log='/scratch/hpc/07/zhang303/O-TPT-main/log/adv_otpt_results.csv'
 method='baseline'
 
 # backbone: openai / fare2 / openclip
-backbone='openai'
+backbone='openclip'
 
 # attack: true / false
 use_attack='true'
@@ -58,7 +58,7 @@ pgd_steps=5
 # openclip/fare2 params
 # for backbone='fare2', this will be used automatically
 # for backbone='openclip', replace with another pretrained id if needed
-openclip_pretrained='hf-hub:chs20/fare2-clip'
+openclip_pretrained='hf-hub:chs20/tecoa4-clip'
 # hf-hub:chs20/tecoa4-clip
 # hf-hub:chs20/fare4-clip
 # hf-hub:chs20/fare2-clip

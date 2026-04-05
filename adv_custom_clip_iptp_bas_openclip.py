@@ -12,7 +12,7 @@ except ImportError:
 
 from clip import load as openai_clip_load
 from clip import tokenize as openai_clip_tokenize
-from .simple_tokenizer import SimpleTokenizer as _Tokenizer
+from .clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 from data.imagnet_prompts import imagenet_classes
 from data.covid_prompts import covid_classes
 from data.fewshot_datasets import fewshot_datasets
