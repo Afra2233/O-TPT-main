@@ -55,16 +55,22 @@ pgd_eps=0.01568627
 pgd_alpha=0.00392157
 pgd_steps=5
 
-# openclip/fare2 params
-# for backbone='fare2', this will be used automatically
-# for backbone='openclip', replace with another pretrained id if needed
-openclip_pretrained='hf-hub:chs20/tecoa4-clip'
-# hf-hub:chs20/tecoa4-clip
-# hf-hub:chs20/fare4-clip
-# hf-hub:chs20/fare2-clip
-# hf-hub:chs20/tecoa4-clip
+# =========================
+# OpenCLIP params
+# =========================
+# 二选一：
+# 1) 用 HF hub
+# openclip_pretrained='hf-hub:chs20/tecoa4-clip'
 
-# optional extras
+# 2) 用本地 checkpoint
+openclip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
+
+# 如果你想强制只走本地权重，就把上面 pretrained 留空：
+# openclip_pretrained=''
+
+# =========================
+# Optional extras
+# =========================
 seed=0
 dataset_mode='test'
 use_i_augmix='false'
@@ -114,14 +120,21 @@ CMD="python ./adv_otpt_classification.py ${data_root} \
   --clip_impl ${clip_impl} \
   --download_root ${download_root} \
   --seed ${seed} \
-  --ctx_init a_photo_of_a \
+  --ctx_init ${ctx_init} \
   --dataset_mode ${dataset_mode}"
 
 # =========================
 # Backbone-specific args
 # =========================
 if [ "${clip_impl}" = "open_clip" ]; then
-  CMD="${CMD} --openclip_pretrained ${openclip_pretrained}"
+  if [ -n "${openclip_ckpt}" ]; then
+    CMD="${CMD} --openclip_ckpt ${openclip_ckpt}"
+  elif [ -n "${openclip_pretrained}" ]; then
+    CMD="${CMD} --openclip_pretrained ${openclip_pretrained}"
+  else
+    echo "For open_clip, please set either openclip_ckpt or openclip_pretrained"
+    exit 1
+  fi
 fi
 
 # =========================
@@ -129,7 +142,6 @@ fi
 # =========================
 if [ "${method}" = "tpt" ] || [ "${method}" = "otpt" ] || [ "${method}" = "ts" ]; then
   CMD="${CMD} --tpt"
-  CMD="${CMD} --ctx_init ${ctx_init}"
   CMD="${CMD} --tta_steps ${tta_steps}"
   CMD="${CMD} --selection_p ${selection_p}"
   CMD="${CMD} --n_ctx ${n_ctx}"

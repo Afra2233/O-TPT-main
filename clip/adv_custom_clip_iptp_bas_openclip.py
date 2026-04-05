@@ -24,12 +24,20 @@ _tokenizer = _Tokenizer()
 DOWNLOAD_ROOT = '~/.cache/clip'
 
 
+# def _build_backbone_and_tokenizer(
+#     clip_impl='openai',
+#     arch='ViT-B/16',
+#     pretrained=None,
+#     device='cuda',
+#     download_root=DOWNLOAD_ROOT
+# ):
 def _build_backbone_and_tokenizer(
     clip_impl='openai',
     arch='ViT-B/16',
     pretrained=None,
+    checkpoint_path=None,
     device='cuda',
-    download_root=DOWNLOAD_ROOT
+    download_root='~/.cache/clip'
 ):
     """
     Returns:
@@ -43,14 +51,76 @@ def _build_backbone_and_tokenizer(
         tokenizer_fn = openai_clip_tokenize
         return clip_model, tokenizer_fn
 
+    # elif clip_impl == 'open_clip':
+    #     if open_clip is None:
+    #         raise ImportError("open_clip is not installed, but clip_impl='open_clip' was requested.")
+
+    #     if pretrained is None:
+    #         raise ValueError("For clip_impl='open_clip', please provide pretrained model name or hf-hub path.")
+
+    #     # HF hub path
+    #     if pretrained.startswith('hf-hub:'):
+    #         clip_model, _, _ = open_clip.create_model_and_transforms(
+    #             pretrained,
+    #             device=device
+    #         )
+    #         tokenizer_fn = open_clip.get_tokenizer(pretrained)
+    #     else:
+    #         clip_model, _, _ = open_clip.create_model_and_transforms(
+    #             arch,
+    #             pretrained=pretrained,
+    #             device=device
+    #         )
+    #         tokenizer_fn = open_clip.get_tokenizer(arch)
+
+    #     return clip_model, tokenizer_fn
     elif clip_impl == 'open_clip':
         if open_clip is None:
             raise ImportError("open_clip is not installed, but clip_impl='open_clip' was requested.")
 
-        if pretrained is None:
-            raise ValueError("For clip_impl='open_clip', please provide pretrained model name or hf-hub path.")
+        # local checkpoint path has highest priority
+        if checkpoint_path is not None:
+            clip_model = open_clip.create_model(
+                arch,
+                pretrained=None,
+                device=device
+            )
+            tokenizer_fn = open_clip.get_tokenizer(arch)
 
-        # HF hub path
+            ckpt = torch.load(checkpoint_path, map_location='cpu')
+
+            # common checkpoint layouts
+            if isinstance(ckpt, dict):
+                if 'state_dict' in ckpt:
+                    state_dict = ckpt['state_dict']
+                elif 'model' in ckpt:
+                    state_dict = ckpt['model']
+                else:
+                    state_dict = ckpt
+            else:
+                state_dict = ckpt
+
+            # strip common prefixes
+            new_state_dict = {}
+            for k, v in state_dict.items():
+                nk = k
+                if nk.startswith('module.'):
+                    nk = nk[len('module.'):]
+                if nk.startswith('model.'):
+                    nk = nk[len('model.'):]
+                new_state_dict[nk] = v
+
+            missing, unexpected = clip_model.load_state_dict(new_state_dict, strict=False)
+            print("Loaded open_clip checkpoint from:", checkpoint_path)
+            print("Missing keys:", len(missing))
+            print("Unexpected keys:", len(unexpected))
+
+            clip_model = clip_model.to(device)
+            return clip_model, tokenizer_fn
+
+        if pretrained is None:
+            raise ValueError("For clip_impl='open_clip', provide either pretrained or checkpoint_path.")
+
         if pretrained.startswith('hf-hub:'):
             clip_model, _, _ = open_clip.create_model_and_transforms(
                 pretrained,
@@ -67,8 +137,8 @@ def _build_backbone_and_tokenizer(
 
         return clip_model, tokenizer_fn
 
-    else:
-        raise ValueError(f"Unknown clip_impl: {clip_impl}")
+    # else:
+    #     raise ValueError(f"Unknown clip_impl: {clip_impl}")
 
 
 def _get_visual_module(clip_model):
@@ -440,17 +510,26 @@ class ClipTestTimeTuning(nn.Module):
         learned_cls=False,
         clip_impl='openai',
         pretrained=None,
-        download_root=DOWNLOAD_ROOT
+        download_root=DOWNLOAD_ROOT,
+        checkpoint_path=None
     ):
         super(ClipTestTimeTuning, self).__init__()
 
+        # clip_model, tokenizer_fn = _build_backbone_and_tokenizer(
+        #     clip_impl=clip_impl,
+        #     arch=arch,
+        #     pretrained=pretrained,
+        #     device=device,
+        #     download_root=download_root
+        # )
         clip_model, tokenizer_fn = _build_backbone_and_tokenizer(
-            clip_impl=clip_impl,
-            arch=arch,
-            pretrained=pretrained,
-            device=device,
-            download_root=download_root
-        )
+        clip_impl=clip_impl,
+        arch=arch,
+        pretrained=pretrained,
+        checkpoint_path=checkpoint_path,
+        device=device,
+        download_root=download_root
+)
 
         self.clip_impl = clip_impl
         self.pretrained = pretrained
@@ -538,7 +617,8 @@ def get_coop(
     learned_cls=False,
     clip_impl='openai',
     pretrained=None,
-    download_root=DOWNLOAD_ROOT
+    download_root=DOWNLOAD_ROOT,
+    checkpoint_path=None
 ):
     if test_set in fewshot_datasets:
         classnames = eval("{}_classes".format(test_set.lower()))
@@ -551,18 +631,31 @@ def get_coop(
         classnames = covid_classes
     else:
         classnames = imagenet_classes
+        model = ClipTestTimeTuning(
+            device,
+            classnames,
+            None,
+            arch=clip_arch,
+            n_ctx=n_ctx,
+            ctx_init=ctx_init,
+            learned_cls=learned_cls,
+            clip_impl=clip_impl,
+            pretrained=pretrained,
+            checkpoint_path=checkpoint_path,
+            download_root=download_root
+        )
 
-    model = ClipTestTimeTuning(
-        device,
-        classnames,
-        None,
-        arch=clip_arch,
-        n_ctx=n_ctx,
-        ctx_init=ctx_init,
-        learned_cls=learned_cls,
-        clip_impl=clip_impl,
-        pretrained=pretrained,
-        download_root=download_root
-    )
+    # model = ClipTestTimeTuning(
+    #     device,
+    #     classnames,
+    #     None,
+    #     arch=clip_arch,
+    #     n_ctx=n_ctx,
+    #     ctx_init=ctx_init,
+    #     learned_cls=learned_cls,
+    #     clip_impl=clip_impl,
+    #     pretrained=pretrained,
+    #     download_root=download_root
+    # )
 
     return model

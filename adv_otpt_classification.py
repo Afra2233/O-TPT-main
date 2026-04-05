@@ -320,9 +320,23 @@ def main_worker(gpu, args):
         load_model_weight(args.load, model, "cuda:{}".format(args.gpu), args)
         model_state = deepcopy(model.state_dict())
     else:
+       
         # model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init, args.disp_cons)
-        model = get_coop(args.arch, args.test_sets, args.gpu,args.n_ctx, args.ctx_init, args.disp_cons,clip_impl=args.clip_impl, pretrained=args.openclip_pretrained, download_root=args.download_root)
-        if args.load is not None:
+        # model = get_coop(args.arch, args.test_sets, args.gpu,args.n_ctx, args.ctx_init, args.disp_cons,clip_impl=args.clip_impl, pretrained=args.openclip_pretrained, download_root=args.download_root)
+       model = get_coop(
+            args.arch,
+            args.test_sets,
+            args.gpu,
+            args.n_ctx,
+            args.ctx_init,
+            args.disp_cons,
+            clip_impl=args.clip_impl,
+            pretrained=args.openclip_pretrained,
+            checkpoint_path=args.openclip_ckpt,
+            download_root=args.download_root
+        )
+       
+       if args.load is not None:
             print("Use pre-trained soft prompt (CoOp) as initialization")
             pretrained_ctx = torch.load(args.load)['state_dict']['ctx']
             assert pretrained_ctx.size()[0] == args.n_ctx
@@ -802,6 +816,9 @@ if __name__ == '__main__':
     parser.add_argument('--openclip_pretrained', type=str, default=None,
                     help='For open_clip: e.g. laion2b_s34b_b88k or hf-hub:chs20/fare2-clip')
     parser.add_argument('--download_root', type=str, default='~/.cache/clip')
+
+    parser.add_argument('--openclip_ckpt', type=str, default=None,
+                    help='path to local open_clip checkpoint (.pt/.pth)')
 
     args = parser.parse_args()
 
