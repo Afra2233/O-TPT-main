@@ -469,16 +469,22 @@ def main_worker(gpu, args):
             robust_accuracy_data[set_id].append(robust_acc)
             robust_ece_data[set_id].append(robust_ece)
 
-        try:
-            print("=> Clean Acc. on testset [{}]: @1 {}/ @5 {}".format(
-                set_id, results[set_id]['clean'][0], results[set_id]['clean'][1]
-            ))
-            if args.eval_attack and results[set_id]['robust'] is not None:
-                print("=> Robust Acc. on testset [{}]: @1 {}/ @5 {}".format(
-                    set_id, results[set_id]['robust'][0], results[set_id]['robust'][1]
-                ))
-        except Exception:
-            print("=> Acc. on testset [{}]: {}".format(set_id, results[set_id]))
+        # try:
+        #     print("=> Clean Acc. on testset [{}]: @1 {}/ @5 {}".format(
+        #         set_id, results[set_id]['clean'][0], results[set_id]['clean'][1]
+        #     ))
+        #     if args.eval_attack and results[set_id]['robust'] is not None:
+        #         print("=> Robust Acc. on testset [{}]: @1 {}/ @5 {}".format(
+        #             set_id, results[set_id]['robust'][0], results[set_id]['robust'][1]
+        #         ))
+        # except Exception:
+        #     print("=> Acc. on testset [{}]: {}".format(set_id, results[set_id]))
+        print("=> Final metrics on testset [{}]:".format(set_id))
+        print("   Clean Accuracy: {:.2f}".format(clean_acc))
+        print("   Clean ECE: {:.2f}".format(clean_ece))
+        if args.eval_attack and result_dicts['robust'] is not None:
+            print("   Robust Accuracy: {:.2f}".format(robust_acc))
+            print("   Robust ECE: {:.2f}".format(robust_ece))
 
         del val_dataset, val_loader
 
@@ -504,25 +510,45 @@ def main_worker(gpu, args):
             args.pgd_eps, args.pgd_alpha, args.pgd_steps
         ))
 
-    print("\t\t [set_id] \t\t Clean Top-1 acc. \t\t Clean Top-5 acc.")
+    print("\t\t [set_id] \t\t Clean Acc \t\t Clean ECE")
     for id in results.keys():
         print("{}".format(id), end="\t")
     print("\n")
     for id in results.keys():
-        print("{:.2f}".format(results[id]['clean'][0]), end="\t")
+        print("{:.2f}/{:.2f}".format(clean_accuracy_data[id][0], clean_ece_data[id][0]), end="\t")
     print("\n")
 
     if args.eval_attack:
-        print("\t\t [set_id] \t\t Robust Top-1 acc. \t\t Robust Top-5 acc.")
+        print("\t\t [set_id] \t\t Robust Acc \t\t Robust ECE")
         for id in results.keys():
             print("{}".format(id), end="\t")
         print("\n")
         for id in results.keys():
-            if results[id]['robust'] is not None:
-                print("{:.2f}".format(results[id]['robust'][0]), end="\t")
+            if len(robust_accuracy_data[id]) > 0:
+                print("{:.2f}/{:.2f}".format(robust_accuracy_data[id][0], robust_ece_data[id][0]), end="\t")
             else:
                 print("NA", end="\t")
         print("\n")
+
+    # print("\t\t [set_id] \t\t Clean Top-1 acc. \t\t Clean Top-5 acc.")
+    # for id in results.keys():
+    #     print("{}".format(id), end="\t")
+    # print("\n")
+    # for id in results.keys():
+    #     print("{:.2f}".format(results[id]['clean'][0]), end="\t")
+    # print("\n")
+
+    # if args.eval_attack:
+    #     print("\t\t [set_id] \t\t Robust Top-1 acc. \t\t Robust Top-5 acc.")
+    #     for id in results.keys():
+    #         print("{}".format(id), end="\t")
+    #     print("\n")
+    #     for id in results.keys():
+    #         if results[id]['robust'] is not None:
+    #             print("{:.2f}".format(results[id]['robust'][0]), end="\t")
+    #         else:
+    #             print("NA", end="\t")
+    #     print("\n")
 
     with open(custom_path, 'a' if file_exists else 'w', newline='') as csvfile:
         csvwriter = csv.writer(csvfile)
