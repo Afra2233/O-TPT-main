@@ -38,7 +38,8 @@ load_ckpt=''
 # =========================
 # Model settings
 # =========================
-arch='ViT-B/32'
+# arch='ViT-B/32'
+arch='ViT-B-32'
 bs=64
 gpu_id=0
 download_root='~/.cache/clip'
