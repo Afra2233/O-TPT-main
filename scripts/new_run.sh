@@ -70,7 +70,6 @@ python ./new_otpt_classification.py ${data_root} \
   --gpu ${gpu_id} \
   --ctx_init ${ctx_init} \
   --run_type ${run_type} \
-  --lambda_term ${lambda_term} \
   --clip_ckpt ${clip_ckpt} \
   --attack ${attack} \
   --attack_eps ${attack_eps} \
@@ -79,6 +78,7 @@ python ./new_otpt_classification.py ${data_root} \
   --attack_restarts ${attack_restarts} \
   --eval_mode ${eval_mode}
  # --tpt \
+#  --lambda_term ${lambda_term} \
 
 exit_code=$?
 
