@@ -26,9 +26,9 @@ fi
 arch='ViT-B/32'
 bs=64
 ctx_init='a_photo_of_a'
-run_type='baseline'
-# run_type='tpt_otpt'
-# lambda_term=18
+# run_type='baseline'
+run_type='tpt_otpt'
+lambda_term=18
 
 clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
 # vitb32_fare_eps_1.pt/vitb32_tecoa_eps_1.pt
@@ -76,9 +76,9 @@ python ./new_otpt_classification.py ${data_root} \
   --attack_alpha ${attack_alpha} \
   --attack_steps ${attack_steps} \
   --attack_restarts ${attack_restarts} \
-  --eval_mode ${eval_mode}
-#   --tpt \
-#   --lambda_term ${lambda_term} 
+  --eval_mode ${eval_mode}\
+  --tpt \
+  --lambda_term ${lambda_term} 
 
 exit_code=$?
 
