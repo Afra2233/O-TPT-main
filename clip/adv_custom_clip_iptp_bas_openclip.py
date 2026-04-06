@@ -53,9 +53,10 @@ def _build_backbone_and_tokenizer(
 
         # highest priority: local checkpoint
         if checkpoint_path is not None:
-            clip_model = open_clip.create_model(
+            # Build a full CLIP first, then overwrite ONLY the visual tower
+            clip_model, _, _ = open_clip.create_model_and_transforms(
                 arch,
-                pretrained=None,
+                pretrained='openai',
                 device=device
             )
             tokenizer_fn = open_clip.get_tokenizer(arch)
@@ -72,23 +73,68 @@ def _build_backbone_and_tokenizer(
             else:
                 state_dict = ckpt
 
-            new_state_dict = {}
+            cleaned = {}
             for k, v in state_dict.items():
                 nk = k
                 if nk.startswith('module.'):
                     nk = nk[len('module.'):]
                 if nk.startswith('model.'):
                     nk = nk[len('model.'):]
-                new_state_dict[nk] = v
+                cleaned[nk] = v
 
-            incompatible = clip_model.load_state_dict(new_state_dict, strict=False)
-            print("Loaded open_clip checkpoint from:", checkpoint_path)
-            print("Missing keys:", len(incompatible.missing_keys))
-            print("Unexpected keys:", len(incompatible.unexpected_keys))
+            # Detect whether this is visual-only checkpoint
+            visual_only = (
+                'conv1.weight' in cleaned and
+                'class_embedding' in cleaned and
+                'proj' in cleaned and
+                'token_embedding.weight' not in cleaned
+            )
+
+            if visual_only:
+                visual_sd = clip_model.visual.state_dict()
+                filtered_sd = {}
+                skipped = []
+
+                for k, v in cleaned.items():
+                    if k in visual_sd:
+                        if visual_sd[k].shape == v.shape:
+                            filtered_sd[k] = v
+                        else:
+                            skipped.append((k, tuple(v.shape), tuple(visual_sd[k].shape)))
+
+                load_result = clip_model.visual.load_state_dict(filtered_sd, strict=False)
+
+                print("Loaded VISUAL-ONLY checkpoint from:", checkpoint_path)
+                print("Matched visual keys loaded:", len(filtered_sd))
+                print("Missing visual keys after load:", len(load_result.missing_keys))
+                print("Unexpected visual keys after load:", len(load_result.unexpected_keys))
+                print("Shape-mismatched visual keys skipped:", len(skipped))
+                for item in skipped[:20]:
+                    print("SKIP VISUAL:", item[0], "ckpt:", item[1], "model:", item[2])
+            else:
+                model_sd = clip_model.state_dict()
+                filtered_sd = {}
+                skipped = []
+
+                for k, v in cleaned.items():
+                    if k in model_sd:
+                        if model_sd[k].shape == v.shape:
+                            filtered_sd[k] = v
+                        else:
+                            skipped.append((k, tuple(v.shape), tuple(model_sd[k].shape)))
+
+                load_result = clip_model.load_state_dict(filtered_sd, strict=False)
+
+                print("Loaded FULL/PARTIAL checkpoint from:", checkpoint_path)
+                print("Matched keys loaded:", len(filtered_sd))
+                print("Missing keys after load:", len(load_result.missing_keys))
+                print("Unexpected keys after load:", len(load_result.unexpected_keys))
+                print("Shape-mismatched keys skipped:", len(skipped))
+                for item in skipped[:20]:
+                    print("SKIP:", item[0], "ckpt:", item[1], "model:", item[2])
 
             clip_model = clip_model.to(device)
             return clip_model, tokenizer_fn
-
         if pretrained is None:
             raise ValueError("For clip_impl='open_clip', provide either pretrained or checkpoint_path.")
 
