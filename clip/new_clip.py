@@ -97,6 +97,55 @@ def available_models() -> List[str]:
     return list(_MODELS.keys())
 
 
+# def _unwrap_checkpoint(ckpt):
+#     if isinstance(ckpt, dict):
+#         for k in ["state_dict", "model", "model_state_dict", "clip_state_dict"]:
+#             if k in ckpt and isinstance(ckpt[k], dict):
+#                 return ckpt[k]
+#     return ckpt
+
+
+# def _clean_state_dict_keys(state_dict):
+#     new_state = {}
+#     for k, v in state_dict.items():
+#         nk = k
+#         for prefix in ["module.", "model.", "clip."]:
+#             if nk.startswith(prefix):
+#                 nk = nk[len(prefix):]
+#         new_state[nk] = v
+#     return new_state
+
+
+# def load_custom_checkpoint(model, ckpt_path, verbose=True):
+#     ckpt = torch.load(ckpt_path, map_location="cpu")
+#     state_dict = _unwrap_checkpoint(ckpt)
+#     state_dict = _clean_state_dict_keys(state_dict)
+
+#     model_state = model.state_dict()
+#     matched = {}
+#     skipped = []
+
+#     for k, v in state_dict.items():
+#         if k in model_state and model_state[k].shape == v.shape:
+#             matched[k] = v
+#         else:
+#             skipped.append(k)
+
+#     msg = model.load_state_dict(matched, strict=False)
+
+#     if verbose:
+#         print(f"[load_custom_checkpoint] loaded from: {ckpt_path}")
+#         print(f"[load_custom_checkpoint] matched keys: {len(matched)}")
+#         print(f"[load_custom_checkpoint] missing keys: {len(msg.missing_keys)}")
+#         print(f"[load_custom_checkpoint] unexpected keys: {len(msg.unexpected_keys)}")
+#         print(f"[load_custom_checkpoint] skipped keys due to mismatch/not found: {len(skipped)}")
+
+#         if len(skipped) > 0:
+#             print("[load_custom_checkpoint] first 20 skipped keys:")
+#             for k in skipped[:20]:
+#                 print("  ", k)
+
+#     return model
 def _unwrap_checkpoint(ckpt):
     if isinstance(ckpt, dict):
         for k in ["state_dict", "model", "model_state_dict", "clip_state_dict"]:
@@ -126,9 +175,22 @@ def load_custom_checkpoint(model, ckpt_path, verbose=True):
     skipped = []
 
     for k, v in state_dict.items():
-        if k in model_state and model_state[k].shape == v.shape:
-            matched[k] = v
-        else:
+        candidate_keys = [k]
+
+        # case 1: checkpoint stores only visual backbone keys like
+        # conv1.weight -> map to visual.conv1.weight
+        if not k.startswith("visual.") and ("visual." + k) in model_state:
+            candidate_keys.append("visual." + k)
+
+        # choose first candidate that matches both key and shape
+        loaded = False
+        for ck in candidate_keys:
+            if ck in model_state and model_state[ck].shape == v.shape:
+                matched[ck] = v
+                loaded = True
+                break
+
+        if not loaded:
             skipped.append(k)
 
     msg = model.load_state_dict(matched, strict=False)
@@ -140,13 +202,21 @@ def load_custom_checkpoint(model, ckpt_path, verbose=True):
         print(f"[load_custom_checkpoint] unexpected keys: {len(msg.unexpected_keys)}")
         print(f"[load_custom_checkpoint] skipped keys due to mismatch/not found: {len(skipped)}")
 
+        matched_visual = [k for k in matched.keys() if k.startswith("visual.")]
+        skipped_visual = [k for k in skipped if (not k.startswith("visual.")) or k.startswith("visual.")]
+        print(f"[load_custom_checkpoint] matched visual keys: {len(matched_visual)}")
+
+        if len(matched_visual) > 0:
+            print("[load_custom_checkpoint] first 20 matched visual keys:")
+            for k in matched_visual[:20]:
+                print("  ", k)
+
         if len(skipped) > 0:
             print("[load_custom_checkpoint] first 20 skipped keys:")
             for k in skipped[:20]:
                 print("  ", k)
 
     return model
-
 
 def load(
     name: str,
