@@ -117,9 +117,6 @@ def Calculator(result_dict):
     ece_data = ECE_Loss(20, list_prediction, list_max_confidence, list_correct)
     acc = sum(list_correct) / len(list_correct)
 
-    print('acc: ', acc * 100)
-    print('ece: ', ece_data[0] * 100)
-
     return acc * 100, ece_data[0] * 100, ece_data[1], incorrect_confidences
 
 
@@ -220,7 +217,7 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
         optimizer = torch.optim.AdamW([pgen_ctx], args.lr)
 
     selected_idx = None
-    for j in range(args.tta_steps):
+    for _ in range(args.tta_steps):
         if 'tpt' in args.run_type:
             with torch.cuda.amp.autocast():
                 if args.cocoop:
@@ -232,12 +229,9 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
                     output = output[selected_idx]
                 else:
                     output, selected_idx = select_confident_samples(output, args.selection_p)
-                    softmax_out = torch.softmax(output, dim=-1)
-                    soft_mean = torch.mean(softmax_out, dim=0)
-                    number_of_class = output.shape[1]
 
                 loss = avg_entropy(output)
-                dw = conf_acc(output, args.gpu)
+                _ = conf_acc(output, args.gpu)
         else:
             loss = 0
 
@@ -259,13 +253,9 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
                 single_output = model(args.image)
 
             lambda_ = args.lambda_term
-            number_of_class = output.shape[1]
-
             text_feature = model.textfeatures_
-            Wwt = torch.matmul(text_feature, text_feature.T)
-            wwt_norm_col_HT = torch.linalg.norm(Wwt, dim=-1)
-            Wwt_val_HT = wwt_norm_col_HT.mean()
 
+            Wwt = torch.matmul(text_feature, text_feature.T)
             e = torch.eye(Wwt.shape[1], device=args.gpu)
             M_norm = torch.linalg.norm(Wwt, dim=0, keepdim=True)
             scaled_e = e * M_norm
@@ -277,8 +267,7 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
             normalized_matrix_T_exp = v.unsqueeze(1)
 
             outer_products = normalized_matrix_exp @ normalized_matrix_T_exp
-            divided_matrix = outer_products
-            scaled_matrix = 2 * divided_matrix
+            scaled_matrix = 2 * outer_products
             identity_matrix_dim = e.unsqueeze(0).expand(Wwt.shape[1], -1, -1)
             transformed_matrix = identity_matrix_dim - scaled_matrix
             Wwt_exp = Wwt.unsqueeze(2)
@@ -479,13 +468,12 @@ def main_worker(gpu, args):
             'robust_ece': robust_ece,
         }
 
-        print("=> Clean on [{}]: @1 {:.2f} / @5 {:.2f}".format(
-            set_id, eval_out['clean_top1'], eval_out['clean_top5']
-        ))
+        print("=> Results on [{}]".format(set_id))
+        print("Clean Accuracy: {:.2f}".format(clean_acc))
+        print("Clean ECE: {:.2f}".format(clean_ece))
         if robust_acc is not None:
-            print("=> Robust on [{}]: @1 {:.2f} / @5 {:.2f}".format(
-                set_id, eval_out['robust_top1'], eval_out['robust_top5']
-            ))
+            print("Robust Accuracy: {:.2f}".format(robust_acc))
+            print("Robust ECE: {:.2f}".format(robust_ece))
 
         del val_dataset, val_loader
 
@@ -494,25 +482,17 @@ def main_worker(gpu, args):
     print("params: {} {} {}".format(args.tta_steps, args.lr, args.batch_size))
 
     dataset_ids = list(results.keys())
-    print("\t\t [set_id]")
-    for id_ in dataset_ids:
-        print("{}".format(id_), end="\t")
-    print("\n")
 
-    print("Clean Top-1:")
     for id_ in dataset_ids:
-        print("{:.2f}".format(results[id_]['clean_top1']), end="\t")
-    print("\n")
+        print("Dataset: {}".format(id_))
+        print("Clean Accuracy: {:.2f}".format(results[id_]['clean_acc']))
+        print("Clean ECE: {:.2f}".format(results[id_]['clean_ece']))
 
-    if any(results[id_]['robust_acc'] is not None for id_ in dataset_ids):
-        print("Robust Top-1:")
-        for id_ in dataset_ids:
-            val = results[id_]['robust_top1']
-            if results[id_]['robust_acc'] is None:
-                print("N/A", end="\t")
-            else:
-                print("{:.2f}".format(val), end="\t")
-        print("\n")
+        if results[id_]['robust_acc'] is not None:
+            print("Robust Accuracy: {:.2f}".format(results[id_]['robust_acc']))
+            print("Robust ECE: {:.2f}".format(results[id_]['robust_ece']))
+
+        print("")
 
     output_csv_path = args.csv_log
     if output_csv_path is None:
@@ -544,8 +524,6 @@ def main_worker(gpu, args):
         csvwriter.writerow([current_datetime])
         csvwriter.writerow([""] + dataset_ids)
 
-        csvwriter.writerow(["Clean Top-1"] + ["{:.2f}".format(results[id_]['clean_top1']) for id_ in dataset_ids])
-        csvwriter.writerow(["Clean Top-5"] + ["{:.2f}".format(results[id_]['clean_top5']) for id_ in dataset_ids])
         csvwriter.writerow(["Clean Accuracy"] + [
             "N/A" if results[id_]['clean_acc'] is None else "{:.2f}".format(results[id_]['clean_acc'])
             for id_ in dataset_ids
@@ -556,14 +534,6 @@ def main_worker(gpu, args):
         ])
 
         if any(results[id_]['robust_acc'] is not None for id_ in dataset_ids):
-            csvwriter.writerow(["Robust Top-1"] + [
-                "N/A" if results[id_]['robust_acc'] is None else "{:.2f}".format(results[id_]['robust_top1'])
-                for id_ in dataset_ids
-            ])
-            csvwriter.writerow(["Robust Top-5"] + [
-                "N/A" if results[id_]['robust_acc'] is None else "{:.2f}".format(results[id_]['robust_top5'])
-                for id_ in dataset_ids
-            ])
             csvwriter.writerow(["Robust Accuracy"] + [
                 "N/A" if results[id_]['robust_acc'] is None else "{:.2f}".format(results[id_]['robust_acc'])
                 for id_ in dataset_ids
@@ -584,7 +554,7 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
 
     progress = ProgressMeter(
         len(val_loader),
-        [batch_time, clean_top1, clean_top5],
+        [batch_time],
         prefix='Test: '
     )
 
@@ -642,7 +612,6 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
         if args.tpt and args.cocoop:
             image_feature = image_feature[0].unsqueeze(0)
 
-        # clean eval
         if args.eval_mode in ['clean', 'both']:
             with torch.no_grad():
                 with torch.cuda.amp.autocast():
@@ -670,7 +639,6 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
             clean_top1.update(acc1[0], image.size(0))
             clean_top5.update(acc5[0], image.size(0))
 
-        # robust eval
         if args.attack == 'pgd' and args.eval_mode in ['robust', 'both']:
             x_adv = pgd_attack(model, image, target, args, cons)
 
@@ -702,8 +670,6 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
 
         if (i + 1) % args.print_freq == 0:
             progress.display(i)
-
-    progress.display_summary()
 
     return {
         'clean_top1': clean_top1.avg,
@@ -740,7 +706,6 @@ if __name__ == '__main__':
     parser.add_argument('--load', default=None, type=str, help='path to a pre-trained coop/cocoop')
     parser.add_argument('--seed', type=int, default=0)
 
-    # O-TPT args
     parser.add_argument('--lambda_term', type=float, default=0.0, help='lambda for o-tpt')
     parser.add_argument('--disp_cons', type=int, nargs='+', default=[18.0], help='List of display constants')
     parser.add_argument('--run_type', type=str, default='baseline_tpt',
@@ -748,10 +713,8 @@ if __name__ == '__main__':
     parser.add_argument('--two_step', action='store_true', default=False, help='two step training')
     parser.add_argument('--I_augmix', action='store_true', default=False, help='augmix for I')
 
-    # robust checkpoint
     parser.add_argument('--clip_ckpt', type=str, default=None, help='path to robust CLIP checkpoint')
 
-    # adversarial eval
     parser.add_argument('--attack', type=str, default='none', choices=['none', 'pgd'])
     parser.add_argument('--attack_eps', type=float, default=1.0 / 255.0)
     parser.add_argument('--attack_alpha', type=float, default=0.25 / 255.0)
@@ -759,7 +722,6 @@ if __name__ == '__main__':
     parser.add_argument('--attack_restarts', type=int, default=1)
     parser.add_argument('--eval_mode', type=str, default='both', choices=['clean', 'robust', 'both'])
 
-    # internal flag: do not set manually in shell, PGD uses it temporarily
     parser.add_argument('--input_grad', action='store_true', default=False)
 
     args = parser.parse_args()
