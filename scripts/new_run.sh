@@ -75,9 +75,9 @@ python ./new_otpt_classification.py ${data_root} \
   --attack_alpha ${attack_alpha} \
   --attack_steps ${attack_steps} \
   --attack_restarts ${attack_restarts} \
-  --eval_mode ${eval_mode}
- # --tpt \
-#  --lambda_term ${lambda_term} \
+  --eval_mode ${eval_mode}\
+  --tpt \
+  --lambda_term ${lambda_term} 
 
 exit_code=$?
 
