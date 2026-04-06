@@ -488,6 +488,14 @@ def main_worker(gpu, args):
 
         val_dataset = build_dataset(set_id, data_transform, args.data, mode=args.dataset_mode)
         print("number of test samples: {}".format(len(val_dataset)))
+        print("num classnames:", len(classnames))
+        print("first 10 classnames:", classnames[:10])
+
+        if hasattr(val_dataset, "classes"):
+            print("dataset.classes[:10]:", val_dataset.classes[:10])
+
+        if hasattr(val_dataset, "class_to_idx"):
+            print("dataset.class_to_idx sample:", list(val_dataset.class_to_idx.items())[:10])
         val_loader = torch.utils.data.DataLoader(
             val_dataset,
             batch_size=batchsize,
