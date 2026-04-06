@@ -23,6 +23,15 @@ _tokenizer = _Tokenizer()
 DOWNLOAD_ROOT = '~/.cache/clip'
 
 
+def _normalize_openclip_arch_name(arch: str) -> str:
+    mapping = {
+        "ViT-B/32": "ViT-B-32",
+        "ViT-B/16": "ViT-B-16",
+        "ViT-L/14": "ViT-L-14",
+    }
+    return mapping.get(arch, arch)
+
+
 def _build_backbone_and_tokenizer(
     clip_impl='openai',
     arch='ViT-B/16',
@@ -51,13 +60,21 @@ def _build_backbone_and_tokenizer(
         if open_clip is None:
             raise ImportError("open_clip is not installed, but clip_impl='open_clip' was requested.")
 
+        arch = _normalize_openclip_arch_name(arch)
+
+        print("[OpenCLIP] arch =", arch)
+        print("[OpenCLIP] pretrained =", pretrained)
+        print("[OpenCLIP] checkpoint_path =", checkpoint_path)
+
         # highest priority: local checkpoint
         if checkpoint_path is not None:
-            # Build a full CLIP first, then overwrite ONLY the visual tower
+            # Build a full CLIP scaffold first, then overwrite ONLY the visual tower.
+            # IMPORTANT: use force_quick_gelu=True for OpenAI-pretrained scaffold.
             clip_model, _, _ = open_clip.create_model_and_transforms(
                 arch,
                 pretrained='openai',
-                device=device
+                device=device,
+                force_quick_gelu=True
             )
             tokenizer_fn = open_clip.get_tokenizer(arch)
 
@@ -135,6 +152,7 @@ def _build_backbone_and_tokenizer(
 
             clip_model = clip_model.to(device)
             return clip_model, tokenizer_fn
+
         if pretrained is None:
             raise ValueError("For clip_impl='open_clip', provide either pretrained or checkpoint_path.")
 
@@ -145,10 +163,12 @@ def _build_backbone_and_tokenizer(
             )
             tokenizer_fn = open_clip.get_tokenizer(pretrained)
         else:
+            use_quick_gelu = (pretrained == 'openai')
             clip_model, _, _ = open_clip.create_model_and_transforms(
                 arch,
                 pretrained=pretrained,
-                device=device
+                device=device,
+                force_quick_gelu=use_quick_gelu
             )
             tokenizer_fn = open_clip.get_tokenizer(arch)
 
