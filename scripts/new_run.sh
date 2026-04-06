@@ -26,8 +26,9 @@ fi
 arch='ViT-B/32'
 bs=64
 ctx_init='a_photo_of_a'
-run_type='tpt_otpt'
-lambda_term=18
+run_type = 'baseline'
+# run_type='tpt_otpt'
+# lambda_term=18
 
 clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
 csv_loc="/scratch/hpc/07/zhang303/O-TPT-main/log/test_otpt_tecoa_${testsets}_pgd.csv"
@@ -66,7 +67,6 @@ python ./new_otpt_classification.py ${data_root} \
   -j ${workers} \
   -b ${bs} \
   --gpu ${gpu_id} \
-  --tpt \
   --ctx_init ${ctx_init} \
   --run_type ${run_type} \
   --lambda_term ${lambda_term} \
@@ -77,6 +77,7 @@ python ./new_otpt_classification.py ${data_root} \
   --attack_steps ${attack_steps} \
   --attack_restarts ${attack_restarts} \
   --eval_mode ${eval_mode}
+ # --tpt \
 
 exit_code=$?
 
