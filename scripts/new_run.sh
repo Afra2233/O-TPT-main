@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=otpt_tecoa
+#SBATCH --job-name=fare_base
 #SBATCH -p gpu-medium
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
