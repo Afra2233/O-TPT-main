@@ -9,4 +9,4 @@
 module add anaconda3/2022.05
 source activate otpt
 
-srun python download_datasets.py
+srun python download_dataset.py
