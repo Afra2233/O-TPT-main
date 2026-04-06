@@ -26,7 +26,8 @@ fi
 arch='ViT-B/32'
 bs=64
 ctx_init='a_photo_of_a'
-run_type = 'baseline'
+# run_type = 'baseline'
+run_type='baseline'
 # run_type='tpt_otpt'
 # lambda_term=18
 
