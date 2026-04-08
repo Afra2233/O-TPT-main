@@ -8,14 +8,14 @@
 
 
 # robust
-python analyze_calibration_plots.py \
+sru /storage/hpc/07/zhang303/conda_envs/otpt/bin/python analyze_calibration_plots.py \
   --baseline_npz /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz/DTD_baseline_vitb32_tecoa_eps_1_pgd_eps0.00392156862745.npz \
   --otpt_npz /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz/DTD_tpt_otpt_vitb32_tecoa_eps_1_pgd_eps0.00392156862745.npz \
   --output_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_plots/DTD_tecoa \
   --mode robust
 
 # clean
-# python analyze_calibration_plots.py \
+# srun /storage/hpc/07/zhang303/conda_envs/otpt/bin/python analyze_calibration_plots.py \
 #   --baseline_npz /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz/DTD_baseline_vitb32_tecoa_eps_1_pgd_eps0.00392156862745.npz \
 #   --otpt_npz /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz/DTD_tpt_otpt_vitb32_tecoa_eps_1_pgd_eps0.00392156862745.npz \
 #   --output_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_plots/DTD_tecoa \
