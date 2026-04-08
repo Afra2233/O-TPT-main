@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=teoca_otpt
+#SBATCH --job-name=teoca_base
 #SBATCH -p gpu-medium
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
@@ -26,9 +26,9 @@ fi
 arch='ViT-B/32'
 bs=64
 ctx_init='a_photo_of_a'
-# run_type='baseline'
-run_type='tpt_otpt'
-lambda_term=18
+run_type='baseline'
+# run_type='tpt_otpt'
+# lambda_term=18
 
 clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
 # vitb32_fare_eps_1.pt/vitb32_tecoa_eps_1.pt
@@ -79,8 +79,8 @@ python ./new_otpt_classification.py ${data_root} \
   --eval_mode ${eval_mode}\
   --save_npz \
   --npz_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz \
-  --tpt \
-  --lambda_term ${lambda_term} 
+#   --tpt \
+#   --lambda_term ${lambda_term} 
 
 exit_code=$?
 
