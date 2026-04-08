@@ -119,6 +119,33 @@ def Calculator(result_dict):
 
     return acc * 100, ece_data[0] * 100, ece_data[1], incorrect_confidences
 
+def save_result_npz(save_path, set_id, args, clean_result_dict, robust_result_dict):
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    np.savez(
+        save_path,
+        dataset=np.array(set_id),
+        run_type=np.array(args.run_type),
+        attack=np.array(args.attack),
+        attack_eps=np.array(args.attack_eps),
+        attack_alpha=np.array(args.attack_alpha),
+        attack_steps=np.array(args.attack_steps),
+        attack_restarts=np.array(args.attack_restarts),
+        eval_mode=np.array(args.eval_mode),
+        arch=np.array(args.arch),
+        clip_ckpt=np.array(args.clip_ckpt if args.clip_ckpt is not None else ""),
+        clean_confidence=np.array(clean_result_dict['max_confidence'], dtype=np.float32),
+        clean_prediction=np.array(clean_result_dict['prediction'], dtype=np.int64),
+        clean_label=np.array(clean_result_dict['label'], dtype=np.int64),
+        clean_correct=np.array(clean_result_dict['correct'], dtype=np.int64),
+        robust_confidence=np.array(robust_result_dict['max_confidence'], dtype=np.float32),
+        robust_prediction=np.array(robust_result_dict['prediction'], dtype=np.int64),
+        robust_label=np.array(robust_result_dict['label'], dtype=np.int64),
+        robust_correct=np.array(robust_result_dict['correct'], dtype=np.int64),
+    )
+
+    print(f"Saved analysis stats to: {save_path}")
+
 
 def conf_acc(logits, gpu_id):
     Nb = logits.shape[0]
@@ -468,6 +495,21 @@ def main_worker(gpu, args):
             'robust_ece': robust_ece,
         }
 
+        if args.save_npz:
+            ckpt_tag = "openai"
+            if args.clip_ckpt is not None and len(args.clip_ckpt) > 0:
+                ckpt_tag = os.path.splitext(os.path.basename(args.clip_ckpt))[0]
+
+            npz_filename = f"{set_id}_{args.run_type}_{ckpt_tag}_{args.attack}_eps{args.attack_eps}.npz"
+            npz_path = os.path.join(args.npz_dir, npz_filename)
+
+            save_result_npz(
+                npz_path,
+                set_id,
+                args,
+                eval_out['clean_result_dict'],
+                eval_out['robust_result_dict']
+            )
         print("=> Results on [{}]".format(set_id))
         print("Clean Accuracy: {:.2f}".format(clean_acc))
         print("Clean ECE: {:.2f}".format(clean_ece))
@@ -570,10 +612,12 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
         model.l2_norm_cal = True
     else:
         model.l2_norm_cal = False
-
-    clean_result_dict = {'max_confidence': [], 'prediction': [], 'label': []}
-    robust_result_dict = {'max_confidence': [], 'prediction': [], 'label': []}
-
+# =============================================================
+    # clean_result_dict = {'max_confidence': [], 'prediction': [], 'label': []}
+    # robust_result_dict = {'max_confidence': [], 'prediction': [], 'label': []}
+    clean_result_dict = {'max_confidence': [], 'prediction': [], 'label': [], 'correct': []}
+    robust_result_dict = {'max_confidence': [], 'prediction': [], 'label': [], 'correct': []}
+# =============================================================s
     for i, (images, target) in enumerate(val_loader):
         assert args.gpu is not None
 
@@ -638,16 +682,28 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
             # acc1, acc5 = accuracy(output_clean, target, topk=(1, 5))
             # clean_top1.update(acc1[0], image.size(0))
             # clean_top5.update(acc5[0], image.size(0))
+
+            # max_confidence, max_index = torch.max(softmax_output_clean, 1)
+
+            # clean_result_dict['max_confidence'].extend(max_confidence.detach().cpu().tolist())
+            # clean_result_dict['prediction'].extend(max_index.detach().cpu().tolist())
+            # clean_result_dict['label'].extend(target.detach().cpu().tolist())
+
+            # acc1, acc5 = accuracy(output_clean, target, topk=(1, 5))
+            # clean_top1.update(acc1[0], image.size(0))
+            # clean_top5.update(acc5[0], image.size(0))
+
             max_confidence, max_index = torch.max(softmax_output_clean, 1)
+            correct_clean = (max_index == target).detach().cpu().int().tolist()
 
             clean_result_dict['max_confidence'].extend(max_confidence.detach().cpu().tolist())
             clean_result_dict['prediction'].extend(max_index.detach().cpu().tolist())
             clean_result_dict['label'].extend(target.detach().cpu().tolist())
+            clean_result_dict['correct'].extend(correct_clean)
 
             acc1, acc5 = accuracy(output_clean, target, topk=(1, 5))
             clean_top1.update(acc1[0], image.size(0))
             clean_top5.update(acc5[0], image.size(0))
-
         if args.attack == 'pgd' and args.eval_mode in ['robust', 'both']:
             x_adv = pgd_attack(model, image, target, args, cons)
 
@@ -673,11 +729,23 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
             # acc1_r, acc5_r = accuracy(output_robust, target, topk=(1, 5))
             # robust_top1.update(acc1_r[0], image.size(0))
             # robust_top5.update(acc5_r[0], image.size(0))
+
+            # max_confidence_r, max_index_r = torch.max(softmax_output_robust, 1)
+
+            # robust_result_dict['max_confidence'].extend(max_confidence_r.detach().cpu().tolist())
+            # robust_result_dict['prediction'].extend(max_index_r.detach().cpu().tolist())
+            # robust_result_dict['label'].extend(target.detach().cpu().tolist())
+
+            # acc1_r, acc5_r = accuracy(output_robust, target, topk=(1, 5))
+            # robust_top1.update(acc1_r[0], image.size(0))
+            # robust_top5.update(acc5_r[0], image.size(0))
             max_confidence_r, max_index_r = torch.max(softmax_output_robust, 1)
+            correct_robust = (max_index_r == target).detach().cpu().int().tolist()
 
             robust_result_dict['max_confidence'].extend(max_confidence_r.detach().cpu().tolist())
             robust_result_dict['prediction'].extend(max_index_r.detach().cpu().tolist())
             robust_result_dict['label'].extend(target.detach().cpu().tolist())
+            robust_result_dict['correct'].extend(correct_robust)
 
             acc1_r, acc5_r = accuracy(output_robust, target, topk=(1, 5))
             robust_top1.update(acc1_r[0], image.size(0))
@@ -742,6 +810,11 @@ if __name__ == '__main__':
     parser.add_argument('--eval_mode', type=str, default='both', choices=['clean', 'robust', 'both'])
 
     parser.add_argument('--input_grad', action='store_true', default=False)
+
+    parser.add_argument('--save_npz', action='store_true', default=False,
+                    help='save per-sample confidence/prediction/label results to npz')
+    parser.add_argument('--npz_dir', type=str, default='./analysis_npz',
+                    help='directory to save analysis npz files')
 
     args = parser.parse_args()
 

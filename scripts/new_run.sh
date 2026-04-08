@@ -77,6 +77,8 @@ python ./new_otpt_classification.py ${data_root} \
   --attack_steps ${attack_steps} \
   --attack_restarts ${attack_restarts} \
   --eval_mode ${eval_mode}\
+  --save_npz \
+  --npz_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz \
   --tpt \
   --lambda_term ${lambda_term} 
 
