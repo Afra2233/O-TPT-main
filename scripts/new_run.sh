@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=teoca_tpt
+#SBATCH --job-name=fare1_tpt
 #SBATCH -p gpu-medium
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
@@ -30,7 +30,7 @@ ctx_init='a_photo_of_a'
 run_type='tpt'
 # lambda_term=18
 
-clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
+clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_fare_eps_1.pt'
 # vitb32_fare_eps_1.pt/vitb32_tecoa_eps_1.pt
 csv_loc="/scratch/hpc/07/zhang303/O-TPT-main/log/test_otpt_tecoa_${testsets}_pgd.csv"
 
