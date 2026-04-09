@@ -32,7 +32,7 @@ run_type='tpt'
 
 clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
 # vitb32_fare_eps_1.pt/vitb32_tecoa_eps_1.pt
-# csv_loc="/scratch/hpc/07/zhang303/O-TPT-main/log/test_otpt_tecoa_${testsets}_pgd.csv"
+csv_loc="/scratch/hpc/07/zhang303/O-TPT-main/log/test_otpt_tecoa_${testsets}_pgd.csv"
 
 attack='pgd'
 attack_eps=0.00392156862745
@@ -77,10 +77,9 @@ python ./new_otpt_classification.py ${data_root} \
   --attack_steps ${attack_steps} \
   --attack_restarts ${attack_restarts} \
   --eval_mode ${eval_mode} \
-  --tpt 
-#   --save_npz \
-#   --npz_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz \
-#   --tpt 
+  --save_npz \
+  --npz_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz \
+  --tpt \
 #   --lambda_term ${lambda_term} 
 
 exit_code=$?
