@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=teoca_base
+#SBATCH --job-name=teoca_tpt
 #SBATCH -p gpu-medium
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
