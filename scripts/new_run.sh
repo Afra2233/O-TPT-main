@@ -27,7 +27,7 @@ arch='ViT-B/32'
 bs=64
 ctx_init='a_photo_of_a'
 run_type='baseline'
-# run_type='tpt_otpt'
+run_type='tpt'
 # lambda_term=18
 
 clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
@@ -79,7 +79,7 @@ python ./new_otpt_classification.py ${data_root} \
   --eval_mode ${eval_mode}\
   --save_npz \
   --npz_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz \
-#   --tpt \
+  --tpt 
 #   --lambda_term ${lambda_term} 
 
 exit_code=$?
