@@ -32,7 +32,7 @@ run_type='tpt'
 
 lambda_adv=0.5
 
-clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_fare_eps_1.pt'
+clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
 # vitb32_fare_eps_1.pt/vitb32_tecoa_eps_1.pt
 csv_loc="/scratch/hpc/07/zhang303/O-TPT-main/log/test_otpt_tecoa_${testsets}_pgd.csv"
 
