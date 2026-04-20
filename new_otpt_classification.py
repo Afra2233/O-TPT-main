@@ -184,7 +184,16 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+def symmetric_kl_from_logits(clean_logits, adv_logits):
+    p_clean = F.softmax(clean_logits, dim=-1).clamp_min(1e-8)
+    p_adv = F.softmax(adv_logits, dim=-1).clamp_min(1e-8)
 
+    log_p_clean = torch.log(p_clean)
+    log_p_adv = torch.log(p_adv)
+
+    kl_1 = F.kl_div(log_p_adv, p_clean, reduction='batchmean')
+    kl_2 = F.kl_div(log_p_clean, p_adv, reduction='batchmean')
+    return 0.5 * (kl_1 + kl_2)
 
 def pgd_attack(model, image, target, args, cons):
     device = image.device
@@ -244,40 +253,80 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
         optimizer = torch.optim.AdamW([pgen_ctx], args.lr)
 
     selected_idx = None
+
     for _ in range(args.tta_steps):
+        loss = 0.0
+        output_clean_full = None
+
+        # -------------------------------------------------
+        # 1) Clean entropy loss (original TPT)
+        # -------------------------------------------------
         if 'tpt' in args.run_type:
             with torch.cuda.amp.autocast():
                 if args.cocoop:
-                    output = model((image_feature, pgen_ctx), cons, args)
+                    output_clean_full = model((image_feature, pgen_ctx), cons, args)
                 else:
-                    output = model(inputs, cons, args)
+                    output_clean_full = model(inputs, cons, args)
 
                 if selected_idx is not None:
-                    output = output[selected_idx]
+                    output = output_clean_full[selected_idx]
                 else:
-                    output, selected_idx = select_confident_samples(output, args.selection_p)
+                    output, selected_idx = select_confident_samples(output_clean_full, args.selection_p)
 
-                loss = avg_entropy(output)
+                loss_ent = avg_entropy(output)
                 _ = conf_acc(output, args.gpu)
-        else:
-            loss = 0
 
+            loss = loss + loss_ent
+
+        # -------------------------------------------------
+        # 2) Optional two-step branch
+        # -------------------------------------------------
         if args.two_step and 'tpt' in args.run_type:
             optimizer.zero_grad()
             scaler.scale(loss).backward(retain_graph=True)
             scaler.step(optimizer)
             scaler.update()
-            loss = 0
+
+            loss = 0.0
 
             with torch.cuda.amp.autocast():
                 if args.cocoop:
                     output2 = model((image_feature, pgen_ctx), cons, args)
                 else:
-                    output2, text_varience = model(inputs, cons, args)
+                    output2 = model(inputs, cons, args)
 
+        # -------------------------------------------------
+        # 3) NEW: clean-adv alignment loss
+        # -------------------------------------------------
+        if args.adv_align:
+            if args.cocoop:
+                raise NotImplementedError("adv_align is not implemented for CoCoOp yet.")
+
+            if output_clean_full is None:
+                with torch.cuda.amp.autocast():
+                    output_clean_full = model(inputs, cons, args)
+
+            x_for_adv = args.image.detach()
+
+            with torch.no_grad():
+                with torch.cuda.amp.autocast():
+                    clean_single_logits = model(x_for_adv, cons, args)
+
+            pseudo_target = clean_single_logits.argmax(dim=1)
+
+            x_adv = pgd_attack(model, x_for_adv, pseudo_target, args, cons)
+
+            with torch.cuda.amp.autocast():
+                adv_logits = model(x_adv, cons, args)
+
+            loss_adv = symmetric_kl_from_logits(clean_single_logits.detach(), adv_logits)
+            loss = loss + args.lambda_adv * loss_adv
+        # -------------------------------------------------
+        # 4) O-TPT orthogonality loss
+        # -------------------------------------------------
         if 'otpt' in args.run_type:
             if output is None and output2 is None:
-                single_output = model(args.image)
+                single_output = model(args.image, cons, args)
 
             lambda_ = args.lambda_term
             text_feature = model.textfeatures_
@@ -287,7 +336,7 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
             M_norm = torch.linalg.norm(Wwt, dim=0, keepdim=True)
             scaled_e = e * M_norm
             u = Wwt - scaled_e
-            u_norm = torch.linalg.norm(u, dim=-1, keepdim=True)
+            u_norm = torch.linalg.norm(u, dim=-1, keepdim=True) + 1e-8
 
             v = u / u_norm
             normalized_matrix_exp = v.unsqueeze(2)
@@ -305,8 +354,11 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
             Ht_ortho_norm = torch.linalg.norm(Ht_ortho, dim=-1)
             Ht_ortho_norm_val = Ht_ortho_norm.mean()
 
-            loss += (lambda_ * Ht_ortho_norm_val)
+            loss = loss + (lambda_ * Ht_ortho_norm_val)
 
+        # -------------------------------------------------
+        # 5) Update prompt
+        # -------------------------------------------------
         if args.run_type not in ['baseline', 'baseline_cocoop', 'baseline_coop', 'baseline_ts']:
             optimizer.zero_grad()
             scaler.scale(loss).backward()
@@ -317,7 +369,6 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
         return pgen_ctx
 
     return
-
 
 def main(args):
     set_random_seed(args.seed)
@@ -636,10 +687,11 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
 
         if args.tpt:
             images = torch.cat(images, dim=0)
-
-        if 'otpt' in args.run_type:
-            args.image = image
-
+# ============================================================
+        # if 'otpt' in args.run_type:
+        #     args.image = image
+        args.image = image
+# ============================================================
         if not args.cocoop:
             if args.tta_steps > 0:
                 with torch.no_grad():
@@ -815,6 +867,11 @@ if __name__ == '__main__':
                     help='save per-sample confidence/prediction/label results to npz')
     parser.add_argument('--npz_dir', type=str, default='./analysis_npz',
                     help='directory to save analysis npz files')
+    
+    parser.add_argument('--lambda_adv', type=float, default=0.5,
+                    help='weight for clean-adv alignment loss')
+    parser.add_argument('--adv_align', action='store_true', default=False,
+                    help='use clean-adv alignment during test-time tuning')
 
     args = parser.parse_args()
 

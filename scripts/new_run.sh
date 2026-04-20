@@ -30,6 +30,8 @@ ctx_init='a_photo_of_a'
 run_type='tpt'
 # lambda_term=18
 
+lambda_adv=0.5
+
 clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_fare_eps_1.pt'
 # vitb32_fare_eps_1.pt/vitb32_tecoa_eps_1.pt
 csv_loc="/scratch/hpc/07/zhang303/O-TPT-main/log/test_otpt_tecoa_${testsets}_pgd.csv"
@@ -41,8 +43,11 @@ attack_steps=10
 attack_restarts=1
 eval_mode='both'
 
+
+
 gpu_id=0
 workers=8
+
 
 mkdir -p /scratch/hpc/07/zhang303/O-TPT-main/log
 
@@ -58,6 +63,7 @@ echo "Attack: ${attack}"
 echo "Eps: ${attack_eps}"
 echo "Alpha: ${attack_alpha}"
 echo "Steps: ${attack_steps}"
+
 echo "=================================================="
 
 python ./new_otpt_classification.py ${data_root} \
@@ -80,6 +86,8 @@ python ./new_otpt_classification.py ${data_root} \
   --save_npz \
   --npz_dir /scratch/hpc/07/zhang303/O-TPT-main/analysis_npz \
   --tpt \
+  --adv_align \
+  --lambda_adv ${lambda_adv}
 #   --lambda_term ${lambda_term} 
 
 exit_code=$?
