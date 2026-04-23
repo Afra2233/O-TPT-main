@@ -184,60 +184,135 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
-def symmetric_kl_from_logits(clean_logits, adv_logits):
-    p_clean = F.softmax(clean_logits, dim=-1).clamp_min(1e-8)
-    p_adv = F.softmax(adv_logits, dim=-1).clamp_min(1e-8)
+# def symmetric_kl_from_logits(clean_logits, adv_logits):
+#     p_clean = F.softmax(clean_logits, dim=-1).clamp_min(1e-8)
+#     p_adv = F.softmax(adv_logits, dim=-1).clamp_min(1e-8)
 
-    log_p_clean = torch.log(p_clean)
-    log_p_adv = torch.log(p_adv)
+#     log_p_clean = torch.log(p_clean)
+#     log_p_adv = torch.log(p_adv)
 
-    kl_1 = F.kl_div(log_p_adv, p_clean, reduction='batchmean')
-    kl_2 = F.kl_div(log_p_clean, p_adv, reduction='batchmean')
-    return 0.5 * (kl_1 + kl_2)
+#     kl_1 = F.kl_div(log_p_adv, p_clean, reduction='batchmean')
+#     kl_2 = F.kl_div(log_p_clean, p_adv, reduction='batchmean')
+#     return 0.5 * (kl_1 + kl_2)
+# def logits_to_dirichlet_alpha(logits, dir_temp=1.0, alpha_offset=1.0, detach_logits_for_alpha=False):
+#     """
+#     Convert logits to Dirichlet concentration parameters.
+#     alpha = exp(logits / dir_temp) + alpha_offset
+#     """
+#     if detach_logits_for_alpha:
+#         logits = logits.detach()
+#     scaled_logits = logits / dir_temp
+#     alpha = torch.exp(scaled_logits).clamp_min(1e-8) + alpha_offset
+#     return alpha
+
+
+# def dirichlet_kl(alpha_p, alpha_q, reduction='batchmean'):
+#     """
+#     KL( Dir(alpha_p) || Dir(alpha_q) )
+#     alpha_p, alpha_q: [B, K]
+#     """
+#     alpha_p = alpha_p.clamp_min(1e-8)
+#     alpha_q = alpha_q.clamp_min(1e-8)
+
+#     sum_p = alpha_p.sum(dim=-1, keepdim=True)   # [B,1]
+#     sum_q = alpha_q.sum(dim=-1, keepdim=True)   # [B,1]
+
+#     lgamma_sum_p = torch.lgamma(sum_p)
+#     lgamma_sum_q = torch.lgamma(sum_q)
+#     lgamma_p = torch.lgamma(alpha_p).sum(dim=-1, keepdim=True)
+#     lgamma_q = torch.lgamma(alpha_q).sum(dim=-1, keepdim=True)
+
+#     digamma_p = torch.digamma(alpha_p)
+#     digamma_sum_p = torch.digamma(sum_p)
+
+#     kl = (lgamma_sum_p - lgamma_p) - (lgamma_sum_q - lgamma_q) + \
+#          ((alpha_p - alpha_q) * (digamma_p - digamma_sum_p)).sum(dim=-1, keepdim=True)
+
+#     kl = kl.squeeze(-1)  # [B]
+
+#     if reduction == 'none':
+#         return kl
+#     elif reduction == 'mean':
+#         return kl.mean()
+#     elif reduction == 'sum':
+#         return kl.sum()
+#     elif reduction == 'batchmean':
+#         return kl.mean()
+#     else:
+#         raise ValueError(f"Unknown reduction: {reduction}")
+
+
+# def dirichlet_center_consistency_loss(logits, dir_temp=1.0, alpha_offset=1.0):
+#     """
+#     logits: [N, K] from selected views
+#     1) convert each view to Dirichlet alpha
+#     2) compute center alpha = mean(alpha_i)
+#     3) minimize average KL(Dir(alpha_i) || Dir(center))
+#     """
+#     alpha = logits_to_dirichlet_alpha(
+#         logits, dir_temp=dir_temp, alpha_offset=alpha_offset
+#     )  # [N, K]
+
+#     center_alpha = alpha.mean(dim=0, keepdim=True).expand_as(alpha)  # [N, K]
+#     loss_dir = dirichlet_kl(alpha, center_alpha, reduction='batchmean')
+#     return loss_dir, alpha
+
+
+# def evidence_penalty(alpha, mode='mean_total'):
+#     """
+#     alpha: [N, K]
+#     Penalize too much evidence to avoid overconfidence.
+#     """
+#     alpha0 = alpha.sum(dim=-1)  # [N]
+
+#     if mode == 'mean_total':
+#         return alpha0.mean()
+#     elif mode == 'log_total':
+#         return torch.log(alpha0 + 1e-8).mean()
+#     else:
+#         raise ValueError(f"Unknown evidence penalty mode: {mode}")
 def logits_to_dirichlet_alpha(logits, dir_temp=1.0, alpha_offset=1.0, detach_logits_for_alpha=False):
     """
-    Convert logits to Dirichlet concentration parameters.
-    alpha = exp(logits / dir_temp) + alpha_offset
+    Stable mapping from logits to Dirichlet concentration parameters.
+    alpha = softplus(logits / dir_temp) + alpha_offset
     """
     if detach_logits_for_alpha:
         logits = logits.detach()
-    scaled_logits = logits / dir_temp
-    alpha = torch.exp(scaled_logits).clamp_min(1e-8) + alpha_offset
+
+    logits = logits.float()
+    scaled_logits = torch.clamp(logits / dir_temp, min=-20.0, max=20.0)
+
+    alpha = F.softplus(scaled_logits) + alpha_offset
+    alpha = alpha.clamp_min(1e-6)
     return alpha
 
 
 def dirichlet_kl(alpha_p, alpha_q, reduction='batchmean'):
     """
-    KL( Dir(alpha_p) || Dir(alpha_q) )
+    Stable KL( Dir(alpha_p) || Dir(alpha_q) )
     alpha_p, alpha_q: [B, K]
     """
-    alpha_p = alpha_p.clamp_min(1e-8)
-    alpha_q = alpha_q.clamp_min(1e-8)
+    alpha_p = alpha_p.float().clamp_min(1e-6)
+    alpha_q = alpha_q.float().clamp_min(1e-6)
 
-    sum_p = alpha_p.sum(dim=-1, keepdim=True)   # [B,1]
-    sum_q = alpha_q.sum(dim=-1, keepdim=True)   # [B,1]
+    sum_p = alpha_p.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+    sum_q = alpha_q.sum(dim=-1, keepdim=True).clamp_min(1e-6)
 
-    lgamma_sum_p = torch.lgamma(sum_p)
-    lgamma_sum_q = torch.lgamma(sum_q)
-    lgamma_p = torch.lgamma(alpha_p).sum(dim=-1, keepdim=True)
-    lgamma_q = torch.lgamma(alpha_q).sum(dim=-1, keepdim=True)
+    term1 = torch.lgamma(sum_p) - torch.lgamma(alpha_p).sum(dim=-1, keepdim=True)
+    term2 = torch.lgamma(sum_q) - torch.lgamma(alpha_q).sum(dim=-1, keepdim=True)
+    term3 = ((alpha_p - alpha_q) * (torch.digamma(alpha_p) - torch.digamma(sum_p))).sum(dim=-1, keepdim=True)
 
-    digamma_p = torch.digamma(alpha_p)
-    digamma_sum_p = torch.digamma(sum_p)
+    kl = term1 - term2 + term3
+    kl = kl.squeeze(-1)
 
-    kl = (lgamma_sum_p - lgamma_p) - (lgamma_sum_q - lgamma_q) + \
-         ((alpha_p - alpha_q) * (digamma_p - digamma_sum_p)).sum(dim=-1, keepdim=True)
-
-    kl = kl.squeeze(-1)  # [B]
+    kl = torch.nan_to_num(kl, nan=0.0, posinf=1e4, neginf=0.0)
 
     if reduction == 'none':
         return kl
-    elif reduction == 'mean':
+    elif reduction == 'mean' or reduction == 'batchmean':
         return kl.mean()
     elif reduction == 'sum':
         return kl.sum()
-    elif reduction == 'batchmean':
-        return kl.mean()
     else:
         raise ValueError(f"Unknown reduction: {reduction}")
 
@@ -253,8 +328,12 @@ def dirichlet_center_consistency_loss(logits, dir_temp=1.0, alpha_offset=1.0):
         logits, dir_temp=dir_temp, alpha_offset=alpha_offset
     )  # [N, K]
 
-    center_alpha = alpha.mean(dim=0, keepdim=True).expand_as(alpha)  # [N, K]
+    center_alpha = alpha.mean(dim=0, keepdim=True)
+    center_alpha = center_alpha.expand_as(alpha).contiguous()
+
     loss_dir = dirichlet_kl(alpha, center_alpha, reduction='batchmean')
+    loss_dir = torch.nan_to_num(loss_dir, nan=0.0, posinf=1e4, neginf=0.0)
+
     return loss_dir, alpha
 
 
@@ -263,14 +342,17 @@ def evidence_penalty(alpha, mode='mean_total'):
     alpha: [N, K]
     Penalize too much evidence to avoid overconfidence.
     """
-    alpha0 = alpha.sum(dim=-1)  # [N]
+    alpha = alpha.float().clamp_min(1e-6)
+    alpha0 = alpha.sum(dim=-1)
 
     if mode == 'mean_total':
-        return alpha0.mean()
+        out = alpha0.mean()
     elif mode == 'log_total':
-        return torch.log(alpha0 + 1e-8).mean()
+        out = torch.log(alpha0 + 1e-6).mean()
     else:
         raise ValueError(f"Unknown evidence penalty mode: {mode}")
+
+    return torch.nan_to_num(out, nan=0.0, posinf=1e4, neginf=0.0)
 def pgd_attack(model, image, target, args, cons):
     device = image.device
     mean = CLIP_MEAN.to(device).view(1, 3, 1, 1)
@@ -317,7 +399,6 @@ def pgd_attack(model, image, target, args, cons):
     args.input_grad = old_flag
     return best_adv
 
-
 def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
     output = None
     output2 = None
@@ -330,30 +411,16 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
 
     selected_idx = None
 
-    for _ in range(args.tta_steps):
+    for step_idx in range(args.tta_steps):
         loss = 0.0
         output_clean_full = None
+        loss_ent = None
+        loss_dir = None
+        loss_evi = None
 
         # -------------------------------------------------
         # 1) Clean entropy loss (original TPT)
         # -------------------------------------------------
-        # if 'tpt' in args.run_type:
-        #     with torch.cuda.amp.autocast():
-        #         if args.cocoop:
-        #             output_clean_full = model((image_feature, pgen_ctx), cons, args)
-        #         else:
-        #             output_clean_full = model(inputs, cons, args)
-
-        #         if selected_idx is not None:
-        #             output = output_clean_full[selected_idx]
-        #         else:
-        #             output, selected_idx = select_confident_samples(output_clean_full, args.selection_p)
-
-        #         loss_ent = avg_entropy(output)
-        #         _ = conf_acc(output, args.gpu)
-
-        #     loss = loss + loss_ent
-
         if 'tpt' in args.run_type:
             with torch.cuda.amp.autocast():
                 if args.cocoop:
@@ -375,10 +442,20 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
         # 2) Optional two-step branch
         # -------------------------------------------------
         if args.two_step and 'tpt' in args.run_type:
+            ctx_before_two_step = None
+            if (not args.cocoop) and hasattr(model, "prompt_learner"):
+                ctx_before_two_step = model.prompt_learner.ctx.detach().clone()
+
             optimizer.zero_grad()
             scaler.scale(loss).backward(retain_graph=True)
             scaler.step(optimizer)
             scaler.update()
+
+            if ctx_before_two_step is not None:
+                ctx_after_two_step = model.prompt_learner.ctx.detach().clone()
+                delta_two_step = (ctx_after_two_step - ctx_before_two_step).abs().mean().item()
+                if getattr(args, "debug_dirichlet", False):
+                    print(f"[two_step] prompt delta: {delta_two_step:.8f}")
 
             loss = 0.0
 
@@ -404,17 +481,28 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
             else:
                 logits_for_dir, selected_idx = select_confident_samples(output_clean_full, args.selection_p)
 
-            loss_dir, alpha = dirichlet_center_consistency_loss(
-                logits_for_dir,
-                dir_temp=args.dir_temp,
-                alpha_offset=args.alpha_offset
-            )
+            # IMPORTANT: compute Dirichlet stuff in fp32 only
+            with torch.cuda.amp.autocast(enabled=False):
+                logits_for_dir_fp32 = logits_for_dir.float()
+                loss_dir, alpha = dirichlet_center_consistency_loss(
+                    logits_for_dir_fp32,
+                    dir_temp=args.dir_temp,
+                    alpha_offset=args.alpha_offset
+                )
+
+                if args.evidence_penalty:
+                    loss_evi = evidence_penalty(alpha, mode=args.evidence_mode)
+
+            if not torch.isfinite(loss_dir):
+                print(">>> loss_dir is not finite:", loss_dir)
+
             loss = loss + args.lambda_dir * loss_dir
 
             if args.evidence_penalty:
-                loss_evi = evidence_penalty(alpha, mode=args.evidence_mode)
+                if not torch.isfinite(loss_evi):
+                    print(">>> loss_evi is not finite:", loss_evi)
                 loss = loss + args.lambda_evi * loss_evi
-        
+
         # -------------------------------------------------
         # 4) O-TPT orthogonality loss
         # -------------------------------------------------
@@ -451,13 +539,38 @@ def test_time_tuning(model, inputs, optimizer, scaler, args, cons):
             loss = loss + (lambda_ * Ht_ortho_norm_val)
 
         # -------------------------------------------------
+        # Debug info
+        # -------------------------------------------------
+        if getattr(args, "debug_dirichlet", False):
+            try:
+                print(f"[step {step_idx}] total loss = {float(loss.detach().cpu()):.8f}, finite = {torch.isfinite(loss).item()}")
+                if loss_ent is not None:
+                    print(f"[step {step_idx}] loss_ent = {float(loss_ent.detach().cpu()):.8f}")
+                if loss_dir is not None:
+                    print(f"[step {step_idx}] loss_dir = {float(loss_dir.detach().cpu()):.8f}, finite = {torch.isfinite(loss_dir).item()}")
+                    print(f"[step {step_idx}] alpha min/max = {alpha.min().item():.8f}, {alpha.max().item():.8f}")
+                if loss_evi is not None:
+                    print(f"[step {step_idx}] loss_evi = {float(loss_evi.detach().cpu()):.8f}, finite = {torch.isfinite(loss_evi).item()}")
+            except Exception as dbg_e:
+                print(">>> debug print failed:", dbg_e)
+
+        # -------------------------------------------------
         # 5) Update prompt
         # -------------------------------------------------
         if args.run_type not in ['baseline', 'baseline_cocoop', 'baseline_coop', 'baseline_ts']:
+            ctx_before = None
+            if (not args.cocoop) and hasattr(model, "prompt_learner"):
+                ctx_before = model.prompt_learner.ctx.detach().clone()
+
             optimizer.zero_grad()
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
+
+            if ctx_before is not None and getattr(args, "debug_dirichlet", False):
+                ctx_after = model.prompt_learner.ctx.detach().clone()
+                delta = (ctx_after - ctx_before).abs().mean().item()
+                print(f"[step {step_idx}] prompt delta = {delta:.8f}")
 
     if args.cocoop:
         return pgen_ctx
@@ -991,7 +1104,11 @@ if __name__ == '__main__':
     parser.add_argument('--evidence_mode', type=str, default='mean_total',
                         choices=['mean_total', 'log_total'],
                         help='type of evidence penalty')
-
+    parser.add_argument('--debug_dirichlet', action='store_true', default=False,
+                    help='print debug info for Dirichlet branch')
+    
+    
+    
     args = parser.parse_args()
 
     if 'otpt' not in args.run_type:

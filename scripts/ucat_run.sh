@@ -98,7 +98,8 @@ python ./ucat_tpt_classification.py ${data_root} \
   --lambda_tpt ${lambda_tpt} \
   --lambda_dir ${lambda_dir} \
   --dir_temp ${dir_temp} \
-  --alpha_offset ${alpha_offset}
+  --alpha_offset ${alpha_offset}\
+  --debug_dirichlet
 
 exit_code=$?
 
