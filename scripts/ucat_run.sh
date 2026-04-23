@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=fare1_dir_tpt
+#SBATCH --job-name= 0-1
 #SBATCH -p gpu-medium
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
@@ -28,7 +28,7 @@ bs=64
 ctx_init='a_photo_of_a'
 run_type='tpt'
 
-clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_fare_eps_1.pt'
+clip_ckpt='/scratch/hpc/07/zhang303/O-TPT-main/checkpoints/vitb32_tecoa_eps_1.pt'
 # vitb32_fare_eps_1.pt/vitb32_tecoa_eps_1.pt
 csv_loc="/scratch/hpc/07/zhang303/O-TPT-main/log/test_dir_tpt_tecoa_${testsets}_pgd.csv"
 
@@ -43,7 +43,7 @@ gpu_id=0
 workers=8
 
 # ===== New method hyperparameters =====
-lambda_tpt=0.1
+lambda_tpt=0。0
 # 原始 TPT 的 marginal entropy loss 权重
 lambda_dir=1.0
 # Dirichlet consistency loss 的权重。
