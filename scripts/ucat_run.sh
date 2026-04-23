@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name= 0-1
+#SBATCH --job-name=t0d1
 #SBATCH -p gpu-medium
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
@@ -43,7 +43,7 @@ gpu_id=0
 workers=8
 
 # ===== New method hyperparameters =====
-lambda_tpt=0。0
+lambda_tpt=0.0
 # 原始 TPT 的 marginal entropy loss 权重
 lambda_dir=1.0
 # Dirichlet consistency loss 的权重。
