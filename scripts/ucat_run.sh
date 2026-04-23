@@ -43,9 +43,9 @@ gpu_id=0
 workers=8
 
 # ===== New method hyperparameters =====
-lambda_tpt=1
+lambda_tpt=0.0
 # 原始 TPT 的 marginal entropy loss 权重
-lambda_dir=0.01
+lambda_dir=1
 # Dirichlet consistency loss 的权重。
 dir_temp=1.0
 # 这是把 logits 映射成 Dirichlet 参数时用的温度。
