@@ -272,16 +272,15 @@ def accuracy(output, target, topk=(1,)):
 #     else:
 #         raise ValueError(f"Unknown evidence penalty mode: {mode}")
 def logits_to_dirichlet_alpha(logits, dir_temp=1.0, alpha_offset=1.0, detach_logits_for_alpha=False):
-    """
-    Stable mapping from logits to Dirichlet concentration parameters.
-    alpha = softplus(logits / dir_temp) + alpha_offset
-    """
     if detach_logits_for_alpha:
         logits = logits.detach()
 
     logits = logits.float()
-    scaled_logits = torch.clamp(logits / dir_temp, min=-20.0, max=20.0)
 
+    # key change: remove per-view global offset
+    logits = logits - logits.mean(dim=-1, keepdim=True)
+
+    scaled_logits = torch.clamp(logits / dir_temp, min=-10.0, max=10.0)
     alpha = F.softplus(scaled_logits) + alpha_offset
     alpha = alpha.clamp_min(1e-6)
     return alpha
