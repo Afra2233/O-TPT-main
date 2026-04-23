@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=t1d0.01
+#SBATCH --job-name=t0d1
 #SBATCH -p gpu-medium
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
