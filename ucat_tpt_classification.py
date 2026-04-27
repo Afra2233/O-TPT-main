@@ -285,8 +285,23 @@ def logits_to_dirichlet_alpha(logits, dir_temp=1.0, alpha_offset=1.0, detach_log
     alpha = F.softplus(scaled_logits) + alpha_offset
     alpha = alpha.clamp_min(1e-6)
     return alpha
+# ========================================
+# 每个 view 内部中心化
 
+# def logits_to_dirichlet_alpha(logits, dir_temp=1.0, alpha_offset=1.0, detach_logits_for_alpha=False):
+#     if detach_logits_for_alpha:
+#         logits = logits.detach()
 
+#     logits = logits.float()
+
+#     # key change: remove per-view global offset
+#     logits = logits - logits.mean(dim=-1, keepdim=True)
+
+#     scaled_logits = torch.clamp(logits / dir_temp, min=-10.0, max=10.0)
+#     alpha = F.softplus(scaled_logits) + alpha_offset
+#     alpha = alpha.clamp_min(1e-6)
+#     return alpha
+# ====================================================
 def dirichlet_kl(alpha_p, alpha_q, reduction='batchmean'):
     """
     Stable KL( Dir(alpha_p) || Dir(alpha_q) )

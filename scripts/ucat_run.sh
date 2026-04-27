@@ -43,7 +43,7 @@ gpu_id=0
 workers=8
 
 # ===== New method hyperparameters =====
-lambda_tpt=0
+lambda_tpt=0.5
 # 原始 TPT 的 marginal entropy loss 权重
 lambda_dir=1
 # Dirichlet consistency loss 的权重。
