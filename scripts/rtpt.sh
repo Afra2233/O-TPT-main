@@ -45,7 +45,12 @@ fi
 arch='ViT-B/32'
 bs=64
 ctx_init='a_photo_of_a'
-run_type='rtpt'
+if [ "${method}" = "rtpt" ]; then
+  run_type='rtpt'
+else
+  run_type='rtpt_dir'
+fi
+
 
 attack='pgd'
 attack_eps=0.00392156862745

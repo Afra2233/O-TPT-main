@@ -118,6 +118,10 @@ def Calculator(result_dict):
     acc = sum(list_correct) / len(list_correct)
 
     return acc * 100, ece_data[0] * 100, ece_data[1], incorrect_confidences
+def fmt_metric(x):
+    if x is None:
+        return "N/A"
+    return "{:.2f}".format(x)
 
 def save_result_npz(save_path, set_id, args, clean_result_dict, robust_result_dict):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -923,11 +927,10 @@ def main_worker(gpu, args):
                 eval_out['robust_result_dict']
             )
         print("=> Results on [{}]".format(set_id))
-        print("Clean Accuracy: {:.2f}".format(clean_acc))
-        print("Clean ECE: {:.2f}".format(clean_ece))
-        if robust_acc is not None:
-            print("Robust Accuracy: {:.2f}".format(robust_acc))
-            print("Robust ECE: {:.2f}".format(robust_ece))
+        print("Clean Accuracy: {}".format(fmt_metric(clean_acc)))
+        print("Clean ECE: {}".format(fmt_metric(clean_ece)))
+        print("Robust Accuracy: {}".format(fmt_metric(robust_acc)))
+        print("Robust ECE: {}".format(fmt_metric(robust_ece)))
 
         del val_dataset, val_loader
 
@@ -939,13 +942,10 @@ def main_worker(gpu, args):
 
     for id_ in dataset_ids:
         print("Dataset: {}".format(id_))
-        print("Clean Accuracy: {:.2f}".format(results[id_]['clean_acc']))
-        print("Clean ECE: {:.2f}".format(results[id_]['clean_ece']))
-
-        if results[id_]['robust_acc'] is not None:
-            print("Robust Accuracy: {:.2f}".format(results[id_]['robust_acc']))
-            print("Robust ECE: {:.2f}".format(results[id_]['robust_ece']))
-
+        print("Clean Accuracy: {}".format(fmt_metric(results[id_]['clean_acc'])))
+        print("Clean ECE: {}".format(fmt_metric(results[id_]['clean_ece'])))
+        print("Robust Accuracy: {}".format(fmt_metric(results[id_]['robust_acc'])))
+        print("Robust ECE: {}".format(fmt_metric(results[id_]['robust_ece'])))
         print("")
 
     output_csv_path = args.csv_log
@@ -1068,14 +1068,61 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
 
         if args.tpt and args.cocoop:
             image_feature = image_feature[0].unsqueeze(0)
+
+        # ============================================================
+        # Clean evaluation
+        # ============================================================
+        if args.eval_mode in ['clean', 'both']:
+            with torch.no_grad():
+                with torch.cuda.amp.autocast():
+                    if args.cocoop:
+                        output_clean = model((image_feature, pgen_ctx), cons, args)
+                    else:
+                        if 'rtpt' in args.run_type:
+                            # R-TPT final prediction: weighted ensemble over augmented clean views
+                            output_clean = rtpt_weighted_ensemble(model, images, args, cons)
+                        else:
+                            output_clean = model(image, cons, args)
+
+            if 'ts' not in args.run_type:
+                softmax_output_clean = softmax(output_clean)
+            elif 'ViT' in args.arch:
+                softmax_output_clean = softmax(output_clean / temperature_value['ViT'])
+            elif 'RN' in args.arch:
+                softmax_output_clean = softmax(output_clean / temperature_value['RN'])
+            else:
+                ipdb.set_trace()
+
+            max_confidence, max_index = torch.max(softmax_output_clean, 1)
+            correct_clean = (max_index == target).detach().cpu().int().tolist()
+
+            clean_result_dict['max_confidence'].extend(
+                max_confidence.detach().cpu().tolist()
+            )
+            clean_result_dict['prediction'].extend(
+                max_index.detach().cpu().tolist()
+            )
+            clean_result_dict['label'].extend(
+                target.detach().cpu().tolist()
+            )
+            clean_result_dict['correct'].extend(correct_clean)
+
+            acc1, acc5 = accuracy(output_clean, target, topk=(1, 5))
+            clean_top1.update(acc1[0], image.size(0))
+            clean_top5.update(acc5[0], image.size(0))
+
+        # ============================================================
+        # Robust evaluation
+        # ============================================================
         if args.attack == 'pgd' and args.eval_mode in ['robust', 'both']:
             x_adv = pgd_attack(model, image, target, args, cons)
 
             if 'rtpt' in args.run_type:
-                # For R-TPT robust evaluation:
-                # rebuild augmented views from adversarial image,
-                # reset prompt, adapt on adversarial augmented views,
-                # then weighted ensemble all adversarial views.
+                # R-TPT robust evaluation:
+                # 1) rebuild augmented views from adversarial image
+                # 2) reset prompt
+                # 3) adapt on adversarial augmented views
+                # 4) weighted ensemble all adversarial views
                 adv_views = build_augmented_views_from_normalized_tensor(
                     x_adv, data_transform, args
                 )
@@ -1084,6 +1131,7 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
                     if args.tta_steps > 0:
                         with torch.no_grad():
                             model.reset()
+
                     optimizer.load_state_dict(optim_state)
 
                     old_image = args.image
@@ -1105,73 +1153,6 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
                     with torch.cuda.amp.autocast():
                         output_robust = model(x_adv, cons, args)
 
-
-        #if args.eval_mode in ['clean', 'both']:
-        #     with torch.no_grad():
-        #         with torch.cuda.amp.autocast():
-        #             if args.cocoop:
-        #                 output_clean = model((image_feature, pgen_ctx), cons, args)
-        #             else:
-        #                 output_clean = model(image, cons, args)
-
-        #     if 'ts' not in args.run_type:
-        #         softmax_output_clean = softmax(output_clean)
-        #     elif 'ViT' in args.arch:
-        #         softmax_output_clean = softmax(output_clean / temperature_value['ViT'])
-        #     elif 'RN' in args.arch:
-        #         softmax_output_clean = softmax(output_clean / temperature_value['RN'])
-        #     else:
-        #         ipdb.set_trace()
-
-        #     # max_confidence, max_index = torch.max(softmax_output_clean, 1)
-
-        #     # clean_result_dict['max_confidence'].append(max_confidence.item())
-        #     # clean_result_dict['prediction'].append(max_index.item())
-        #     # clean_result_dict['label'].append(target.item())
-
-        #     # acc1, acc5 = accuracy(output_clean, target, topk=(1, 5))
-        #     # clean_top1.update(acc1[0], image.size(0))
-        #     # clean_top5.update(acc5[0], image.size(0))
-
-        #     # max_confidence, max_index = torch.max(softmax_output_clean, 1)
-
-        #     # clean_result_dict['max_confidence'].extend(max_confidence.detach().cpu().tolist())
-        #     # clean_result_dict['prediction'].extend(max_index.detach().cpu().tolist())
-        #     # clean_result_dict['label'].extend(target.detach().cpu().tolist())
-
-        #     # acc1, acc5 = accuracy(output_clean, target, topk=(1, 5))
-        #     # clean_top1.update(acc1[0], image.size(0))
-        #     # clean_top5.update(acc5[0], image.size(0))
-
-        #     max_confidence, max_index = torch.max(softmax_output_clean, 1)
-        #     correct_clean = (max_index == target).detach().cpu().int().tolist()
-
-        #     clean_result_dict['max_confidence'].extend(max_confidence.detach().cpu().tolist())
-        #     clean_result_dict['prediction'].extend(max_index.detach().cpu().tolist())
-        #     clean_result_dict['label'].extend(target.detach().cpu().tolist())
-        #     clean_result_dict['correct'].extend(correct_clean)
-
-        #     acc1, acc5 = accuracy(output_clean, target, topk=(1, 5))
-        #     clean_top1.update(acc1[0], image.size(0))
-        #     clean_top5.update(acc5[0], image.size(0))
-        # if args.attack == 'pgd' and args.eval_mode in ['robust', 'both']:
-        #     x_adv = pgd_attack(model, image, target, args, cons)
-
-        #     with torch.no_grad():
-        #         with torch.cuda.amp.autocast():
-        #             output_robust = model(x_adv, cons, args)
-        if args.eval_mode in ['clean', 'both']:
-            with torch.no_grad():
-                with torch.cuda.amp.autocast():
-                    if args.cocoop:
-                        output_clean = model((image_feature, pgen_ctx), cons, args)
-                    else:
-                        if 'rtpt' in args.run_type:
-                            # R-TPT final prediction: weighted ensemble over augmented views
-                            output_clean = rtpt_weighted_ensemble(model, images, args, cons)
-                        else:
-                            output_clean = model(image, cons, args)
-
             if 'ts' not in args.run_type:
                 softmax_output_robust = softmax(output_robust)
             elif 'ViT' in args.arch:
@@ -1181,43 +1162,32 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
             else:
                 ipdb.set_trace()
 
-            # max_confidence_r, max_index_r = torch.max(softmax_output_robust, 1)
-
-            # robust_result_dict['max_confidence'].append(max_confidence_r.item())
-            # robust_result_dict['prediction'].append(max_index_r.item())
-            # robust_result_dict['label'].append(target.item())
-
-            # acc1_r, acc5_r = accuracy(output_robust, target, topk=(1, 5))
-            # robust_top1.update(acc1_r[0], image.size(0))
-            # robust_top5.update(acc5_r[0], image.size(0))
-
-            # max_confidence_r, max_index_r = torch.max(softmax_output_robust, 1)
-
-            # robust_result_dict['max_confidence'].extend(max_confidence_r.detach().cpu().tolist())
-            # robust_result_dict['prediction'].extend(max_index_r.detach().cpu().tolist())
-            # robust_result_dict['label'].extend(target.detach().cpu().tolist())
-
-            # acc1_r, acc5_r = accuracy(output_robust, target, topk=(1, 5))
-            # robust_top1.update(acc1_r[0], image.size(0))
-            # robust_top5.update(acc5_r[0], image.size(0))
             max_confidence_r, max_index_r = torch.max(softmax_output_robust, 1)
             correct_robust = (max_index_r == target).detach().cpu().int().tolist()
 
-            robust_result_dict['max_confidence'].extend(max_confidence_r.detach().cpu().tolist())
-            robust_result_dict['prediction'].extend(max_index_r.detach().cpu().tolist())
-            robust_result_dict['label'].extend(target.detach().cpu().tolist())
+            robust_result_dict['max_confidence'].extend(
+                max_confidence_r.detach().cpu().tolist()
+            )
+            robust_result_dict['prediction'].extend(
+                max_index_r.detach().cpu().tolist()
+            )
+            robust_result_dict['label'].extend(
+                target.detach().cpu().tolist()
+            )
             robust_result_dict['correct'].extend(correct_robust)
 
             acc1_r, acc5_r = accuracy(output_robust, target, topk=(1, 5))
             robust_top1.update(acc1_r[0], image.size(0))
             robust_top5.update(acc5_r[0], image.size(0))
 
-
         batch_time.update(time.time() - end)
         end = time.time()
 
         if (i + 1) % args.print_freq == 0:
             progress.display(i)
+    print("[DEBUG] eval_mode:", args.eval_mode)
+    print("[DEBUG] clean predictions:", len(clean_result_dict['prediction']))
+    print("[DEBUG] robust predictions:", len(robust_result_dict['prediction']))
 
     return {
         'clean_top1': clean_top1.avg,
@@ -1259,15 +1229,16 @@ if __name__ == '__main__':
     # parser.add_argument('--run_type', type=str, default='baseline_tpt',
     #                     choices=['baseline', 'tpt', 'tpt_otpt', 'tpt_ts'])
     parser.add_argument('--run_type', type=str, default='tpt',
-                    choices=[
+                   choices=[
                         'baseline',
                         'tpt',
                         'tpt_otpt',
                         'tpt_ts',
                         'rtpt',
+                        'rtpt_dir',
                         'rtpt_otpt',
                         'rtpt_ts',
-                    ])
+                            ])
     parser.add_argument('--two_step', action='store_true', default=False, help='two step training')
     parser.add_argument('--I_augmix', action='store_true', default=False, help='augmix for I')
 
